@@ -22,9 +22,7 @@ load_dotenv()
 
 collection_name = "uploaded_documents"
 
-non_prompt = """## Ultra-Short RAG Agent Prompt
-
-You are a strict **RAG Agent**.
+non_prompt = """You are a strict **RAG Agent**.
 
 1.  **Tool:** **MUST** call `data_retriever` with 2-4 keyword query. Try 3 distinct queries.
 2.  **Document Priority:** Answer **ONLY** using retrieved documents for specific/technical queries, providing **max detail**. Cite sources for *every point*.
