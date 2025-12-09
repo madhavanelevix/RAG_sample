@@ -1,0 +1,536 @@
+# IT Security Policy
+**Document Version:** 2.1  
+**Last Updated:** December 2024  
+**Document Owner:** IT Security Team  
+**Classification:** Internal Use Only
+
+---
+
+## 1. OVERVIEW
+
+This IT Security Policy establishes the security requirements and best practices for all employees, contractors, and third-party users accessing company IT systems and data.
+
+### 1.1 Purpose
+To protect company information assets, ensure business continuity, and comply with regulatory requirements including GDPR, SOC 2, and ISO 27001.
+
+### 1.2 Scope
+This policy applies to:
+- All employees (full-time, part-time, contract)
+- Third-party vendors with system access
+- All company-owned and personal devices accessing company resources
+- Cloud services and on-premises infrastructure
+
+---
+
+## 2. PASSWORD POLICY
+
+### 2.1 Password Requirements
+All user passwords must meet the following criteria:
+- Minimum length: 12 characters
+- Must include: uppercase, lowercase, numbers, and special characters
+- Cannot contain: username, common words, or sequential characters
+- Password expiration: 90 days
+- Password history: Cannot reuse last 5 passwords
+
+### 2.2 Multi-Factor Authentication (MFA)
+MFA is MANDATORY for:
+- VPN access
+- Email systems (Office 365)
+- Cloud platforms (Azure, AWS)
+- Administrative accounts
+- Remote desktop connections
+
+Approved MFA methods:
+1. Microsoft Authenticator (preferred)
+2. Hardware security keys (YubiKey)
+3. SMS verification (backup only)
+
+### 2.3 Password Storage
+- Never write passwords on paper or sticky notes
+- Use company-approved password manager: 1Password Enterprise
+- Never share passwords via email, chat, or phone
+- Use unique passwords for each system
+
+---
+
+## 3. ACCESS CONTROL
+
+### 3.1 Principle of Least Privilege
+Users receive only the minimum access required for their role. Access reviews conducted quarterly.
+
+### 3.2 Account Provisioning Process
+1. Manager submits access request via ServiceNow
+2. IT Security reviews and approves
+3. Access granted within 24 hours
+4. Confirmation sent to manager and user
+
+### 3.3 Account Termination
+Upon employee departure:
+- Access revoked within 1 hour of notification
+- Accounts disabled immediately
+- Full account deletion after 90 days (compliance hold)
+- Equipment return verified before final paycheck
+
+### 3.4 Privileged Access Management
+Administrative accounts require:
+- Separate admin account (username-admin)
+- Hardware security key authentication
+- Just-in-time (JIT) access with 4-hour sessions
+- All actions logged and audited
+
+---
+
+## 4. DATA CLASSIFICATION
+
+### 4.1 Classification Levels
+
+**PUBLIC**
+- Marketing materials, press releases
+- Published documentation
+- No access restrictions
+
+**INTERNAL**
+- Internal communications, policies
+- General business documents
+- Accessible to all employees
+
+**CONFIDENTIAL**
+- Customer data, financial records
+- HR information, salary data
+- Source code, intellectual property
+- Requires role-based access
+
+**RESTRICTED**
+- Trade secrets, merger information
+- Security credentials, encryption keys
+- Legal documents under NDA
+- Requires executive approval
+
+### 4.2 Data Handling Requirements
+
+**Confidential Data:**
+- Encrypt at rest and in transit (AES-256)
+- Store only on approved platforms (SharePoint, OneDrive)
+- Never send via personal email
+- Delete securely when no longer needed
+
+**Restricted Data:**
+- Access limited to named individuals
+- Stored in dedicated secure repositories
+- All access logged and monitored
+- Annual access certification required
+
+---
+
+## 5. DEVICE SECURITY
+
+### 5.1 Endpoint Protection
+All devices must have:
+- Microsoft Defender for Endpoint (Windows)
+- Jamf Protect (macOS)
+- Auto-update enabled
+- Full disk encryption (BitLocker/FileVault)
+- Screen lock: 5 minutes idle timeout
+
+### 5.2 Mobile Device Management (MDM)
+Company mobile devices enrolled in Microsoft Intune with:
+- Remote wipe capability
+- App protection policies
+- Conditional access enforcement
+- Location tracking enabled
+
+### 5.3 BYOD (Bring Your Own Device)
+Personal devices accessing company email:
+- Intune MAM (Mobile Application Management) required
+- Company data containerized
+- Minimum OS versions: iOS 15, Android 12
+- Jailbroken/rooted devices prohibited
+
+### 5.4 Lost or Stolen Devices
+Report immediately to IT Security:
+- Email: security@company.com
+- Phone: +1-555-0199 (24/7)
+- Remote wipe initiated within 1 hour
+
+---
+
+## 6. NETWORK SECURITY
+
+### 6.1 VPN Usage
+VPN required for:
+- Remote access to internal systems
+- Public Wi-Fi connections
+- Travel outside company offices
+
+Approved VPN: Cisco AnyConnect
+- Always-on VPN for remote workers
+- Split tunneling disabled
+- Kill switch enabled
+
+### 6.2 Wi-Fi Security
+**Corporate Wi-Fi: CompanySecure**
+- WPA3-Enterprise encryption
+- 802.1X authentication
+- Certificate-based access
+
+**Guest Wi-Fi: CompanyGuest**
+- Isolated from corporate network
+- 2-hour time limit
+- No access to internal resources
+
+### 6.3 Firewall Rules
+- Default deny all inbound traffic
+- Outbound restricted to business applications
+- Geo-blocking: Block traffic from high-risk countries
+- IDS/IPS monitoring all traffic
+
+---
+
+## 7. EMAIL AND COMMUNICATION SECURITY
+
+### 7.1 Email Security
+- SPF, DKIM, DMARC enforcement
+- ATP (Advanced Threat Protection) enabled
+- Anti-phishing training quarterly
+- Suspicious emails reported via "Report Phishing" button
+
+### 7.2 Phishing Response
+If you receive a suspicious email:
+1. DO NOT click links or open attachments
+2. Click "Report Phishing" in Outlook
+3. Delete the email
+4. Contact IT Security if credentials were entered
+
+### 7.3 Approved Communication Tools
+**Internal:**
+- Microsoft Teams (chat, calls, meetings)
+- Outlook (email)
+- SharePoint (document collaboration)
+
+**External:**
+- Zoom (client meetings only)
+- Slack Connect (approved partners)
+
+**Prohibited:**
+- Personal email for business
+- WhatsApp, Telegram for work
+- Unapproved file sharing (Dropbox, WeTransfer)
+
+---
+
+## 8. INCIDENT RESPONSE
+
+### 8.1 Security Incident Definition
+Any event that compromises:
+- Confidentiality, integrity, or availability of data
+- Security of systems or networks
+- Regulatory compliance
+
+### 8.2 Incident Reporting
+**Report immediately:**
+- Suspected malware infection
+- Lost/stolen devices
+- Unauthorized access attempts
+- Data breaches or leaks
+- Phishing attacks
+
+**Contact:**
+- Email: security-incident@company.com
+- Phone: +1-555-0199 (24/7)
+- Teams: IT Security Team channel
+
+### 8.3 Incident Response Process
+1. **Detection & Reporting** (0-1 hour)
+   - Incident reported to security team
+   - Initial triage and classification
+
+2. **Containment** (1-4 hours)
+   - Isolate affected systems
+   - Preserve evidence
+   - Prevent further damage
+
+3. **Investigation** (4-24 hours)
+   - Root cause analysis
+   - Impact assessment
+   - Document findings
+
+4. **Recovery** (24-72 hours)
+   - Restore systems from backup
+   - Apply security patches
+   - Verify system integrity
+
+5. **Post-Incident Review** (1 week)
+   - Lessons learned
+   - Policy updates
+   - Additional controls implemented
+
+---
+
+## 9. CLOUD SECURITY
+
+### 9.1 Approved Cloud Platforms
+- Microsoft 365 (Email, SharePoint, Teams)
+- Microsoft Azure (Infrastructure, PaaS)
+- AWS (Development/staging environments only)
+- Salesforce (CRM)
+
+### 9.2 Cloud Security Requirements
+- SSO with MFA mandatory
+- Data residency: US and EU regions only
+- Encryption at rest (AES-256)
+- Regular access reviews (monthly)
+- Activity logging enabled
+
+### 9.3 Shadow IT Policy
+Unapproved cloud services are prohibited:
+- Automatic discovery via CASB (Cloud Access Security Broker)
+- Violation results in immediate access blocking
+- Repeated violations: disciplinary action
+
+---
+
+## 10. COMPLIANCE AND AUDITING
+
+### 10.1 Security Audits
+- Internal audits: Quarterly
+- External audits: Annual (SOC 2 Type II)
+- Penetration testing: Bi-annually
+- Vulnerability assessments: Monthly
+
+### 10.2 Compliance Requirements
+**GDPR (General Data Protection Regulation):**
+- Data subject rights honored within 30 days
+- Privacy by design in all systems
+- Data Protection Impact Assessments (DPIA) for new projects
+
+**SOC 2 Type II:**
+- Security, availability, confidentiality controls
+- Annual audit by certified firm
+- Continuous monitoring and evidence collection
+
+**ISO 27001:**
+- Information Security Management System (ISMS)
+- Risk assessment and treatment
+- Annual certification audit
+
+### 10.3 Record Retention
+- Security logs: 1 year
+- Audit reports: 7 years
+- Incident reports: 7 years
+- Policy documents: Indefinite (version controlled)
+
+---
+
+## 11. TRAINING AND AWARENESS
+
+### 11.1 Required Training
+**New Hire Security Training:**
+- Completed within first week
+- 60-minute course covering all policies
+- Test required (80% passing score)
+
+**Annual Security Refresher:**
+- Completed every October
+- Updated threat landscape
+- New policy changes
+
+**Phishing Simulation:**
+- Monthly simulated phishing emails
+- Remedial training for click-throughs
+- Recognition for top performers
+
+### 11.2 Security Champions Program
+Department security champions:
+- Monthly security updates
+- First point of contact for team
+- Early access to new security tools
+
+---
+
+## 12. ACCEPTABLE USE POLICY
+
+### 12.1 Permitted Use
+Company IT resources for:
+- Business activities and communication
+- Professional development
+- Reasonable personal use (lunch breaks, after hours)
+
+### 12.2 Prohibited Activities
+- Illegal activities or pirated software
+- Harassment, discrimination, or offensive content
+- Cryptocurrency mining
+- Torrenting or peer-to-peer file sharing
+- Circumventing security controls
+- Using VPN to access restricted content
+
+### 12.3 Monitoring and Privacy
+- All company IT activity may be monitored
+- No expectation of privacy on company systems
+- Monitoring for security and compliance only
+- Personal device monitoring limited to work apps only
+
+---
+
+## 13. VENDOR AND THIRD-PARTY SECURITY
+
+### 13.1 Vendor Risk Assessment
+All vendors with system access require:
+- Security questionnaire completion
+- SOC 2 or ISO 27001 certification
+- Business Associate Agreement (BAA) if handling PHI
+- Annual security review
+
+### 13.2 Vendor Access Management
+- Least privilege access
+- Time-limited credentials (max 90 days)
+- MFA required
+- Activity logging and monitoring
+- Quarterly access review
+
+---
+
+## 14. PHYSICAL SECURITY
+
+### 14.1 Office Access
+- Badge-controlled entry
+- Visitor sign-in and escort required
+- Tailgating prevention
+- Security cameras in common areas
+
+### 14.2 Clean Desk Policy
+- Lock screens when away from desk
+- No confidential documents left visible
+- Secure documents in locked cabinets
+- Shred sensitive documents (cross-cut shredder)
+
+### 14.3 Server Room Access
+- Restricted to authorized IT personnel
+- Biometric access control
+- 24/7 video surveillance
+- Access logs reviewed monthly
+
+---
+
+## 15. POLICY VIOLATIONS
+
+### 15.1 Violation Categories
+
+**Minor Violations:**
+- First offense: Verbal warning
+- Second offense: Written warning
+- Third offense: Performance improvement plan
+
+**Major Violations:**
+- Immediate suspension
+- Investigation by HR and Security
+- Possible termination
+
+**Criminal Violations:**
+- Immediate termination
+- Law enforcement notification
+- Legal action pursued
+
+### 15.2 Examples
+
+**Minor:**
+- Using weak password
+- Sharing non-confidential credentials
+- Delaying security updates
+
+**Major:**
+- Disabling antivirus software
+- Sharing confidential data externally
+- Accessing systems without authorization
+
+**Criminal:**
+- Data theft
+- Installing malware
+- Sabotaging systems
+
+---
+
+## 16. POLICY GOVERNANCE
+
+### 16.1 Policy Review
+- Annual review by IT Security Team
+- Updates as needed for new threats
+- Stakeholder input from all departments
+- Board approval for major changes
+
+### 16.2 Policy Distribution
+- Published on company intranet
+- Email notification for updates
+- Acknowledgment required annually
+- New hire acknowledgment during onboarding
+
+### 16.3 Questions and Exceptions
+**Policy Questions:**
+Email: security-policy@company.com
+
+**Exception Requests:**
+- Submit via ServiceNow
+- Business justification required
+- CISO approval needed
+- Temporary (max 90 days) or permanent
+
+---
+
+## 17. CONTACT INFORMATION
+
+**IT Security Team**
+- Email: security@company.com
+- Phone: +1-555-0199 (24/7)
+- Teams: IT Security Team
+
+**IT Help Desk**
+- Email: helpdesk@company.com
+- Phone: +1-555-0100
+- Portal: https://helpdesk.company.com
+
+**Chief Information Security Officer (CISO)**
+- Name: Sarah Chen
+- Email: sarah.chen@company.com
+- Phone: +1-555-0198
+
+---
+
+## 18. DOCUMENT HISTORY
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | Jan 2022 | J. Smith | Initial policy |
+| 1.5 | Jun 2023 | S. Chen | Added cloud security section |
+| 2.0 | Jan 2024 | S. Chen | Major update: MFA requirements |
+| 2.1 | Dec 2024 | S. Chen | Updated password policy, BYOD |
+
+---
+
+## APPENDIX A: GLOSSARY
+
+**AES-256:** Advanced Encryption Standard with 256-bit keys
+
+**CASB:** Cloud Access Security Broker - monitors cloud app usage
+
+**IDS/IPS:** Intrusion Detection/Prevention System
+
+**JIT:** Just-In-Time access - temporary elevated permissions
+
+**MAM:** Mobile Application Management
+
+**MDM:** Mobile Device Management
+
+**MFA:** Multi-Factor Authentication
+
+**SOC 2:** Service Organization Control 2 audit framework
+
+**SSO:** Single Sign-On
+
+---
+
+*End of Document*
+
+**Acknowledgment:** I have read, understood, and agree to comply with this IT Security Policy.
+
+Employee Name: _________________  
+Signature: _________________  
+Date: _________________

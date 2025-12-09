@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise AI Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Import marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+        :root {
+            --primary-blue: #0A7EFF;
+            --sidebar-width: 280px;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            overflow: hidden; /* Prevent body scrolling */
+        }
+        .ai-chat-bubble {
+            background-color: white;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .user-chat-bubble {
+            background-color: var(--primary-blue);
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(10, 126, 255, 0.3), 0 2px 4px -2px rgba(10, 126, 255, 0.1);
+        }
+
+        /* --- Markdown Content Styles --- */
+        /* Tailwind resets default styles, so we need to re-apply them for generated markdown */
+        .markdown-body {
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        .markdown-body p { margin-bottom: 0.75em; }
+        .markdown-body p:last-child { margin-bottom: 0; }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+            font-weight: 700;
+            color: #1f2937;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        .markdown-body h1 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+        .markdown-body h2 { font-size: 1.25em; }
+        .markdown-body h3 { font-size: 1.1em; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5em; margin-bottom: 0.75em; }
+        .markdown-body ol { list-style-type: decimal; margin-left: 1.5em; margin-bottom: 0.75em; }
+        .markdown-body li { margin-bottom: 0.25em; }
+        .markdown-body strong { font-weight: 600; color: #111827; }
+        .markdown-body em { font-style: italic; }
+        .markdown-body blockquote {
+            border-left: 4px solid #e5e7eb;
+            padding-left: 1em;
+            color: #4b5563;
+            font-style: italic;
+            margin-bottom: 0.75em;
+        }
+        .markdown-body code {
+            background-color: #f3f4f6;
+            padding: 0.2em 0.4em;
+            border-radius: 0.25em;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.875em;
+            color: #c026d3; /* Purple text for inline code */
+        }
+        .markdown-body pre {
+            background-color: #1f2937; /* Dark background for code blocks */
+            color: #f3f4f6;
+            padding: 1em;
+            border-radius: 0.5em;
+            overflow-x: auto;
+            margin-bottom: 0.75em;
+        }
+        .markdown-body pre code {
+            background-color: transparent;
+            padding: 0;
+            color: inherit;
+            font-size: 0.875em;
+        }
+        .markdown-body a {
+            color: #0A7EFF;
+            text-decoration: underline;
+        }
+        .markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 0.75em;
+        }
+        .markdown-body th, .markdown-body td {
+            border: 1px solid #e5e7eb;
+            padding: 0.5em;
+            text-align: left;
+        }
+        .markdown-body th {
+            background-color: #f9fafb;
+            font-weight: 600;
+        }
+        
+        /* Sidebar Transitions & Positioning */
+        #sidebar {
+            width: var(--sidebar-width);
+            z-index: 50;
+            transition: transform 0.3s ease-in-out;
+        }
+
+        /* Mobile State (Default) */
+        @media (max-width: 1023px) {
+            #sidebar {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                transform: translateX(-100%); /* Hidden by default */
+            }
+            .sidebar-active #sidebar {
+                transform: translateX(0); /* Show when active */
+            }
+            /* Backdrop for mobile when sidebar is open */
+            .sidebar-active::before {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.5);
+                z-index: 40;
+            }
+        }
+
+        /* Desktop State */
+        @media (min-width: 1024px) {
+            #sidebar {
+                position: relative; /* Flows naturally in flex container */
+                transform: none !important; /* Always visible */
+                flex-shrink: 0;
+            }
+            /* Reset any transforms from mobile state toggling */
+            body {
+                flex-direction: row;
+            }
+        }
+
+        /* Custom scrollbar for chat history */
+        #chat-history {
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #ccc #f0f0f0;
+        }
+        #chat-history::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat-history::-webkit-scrollbar-track {
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+        #chat-history::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 4px;
+            border: 2px solid #f0f0f0;
+        }
+        /* Empty State Styling */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #64748b;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col lg:flex-row transition-colors">
+
+    <!-- Mobile Menu Button (Visible on screens < lg) -->
+    <button id="menu-button" class="lg:hidden fixed top-4 left-4 p-2 bg-white rounded-full shadow-lg z-50 transition duration-150 ease-in-out hover:bg-gray-100 text-gray-700">
+        <i class="fas fa-bars"></i>
+    </button>
+
+    <!-- Sidebar -->
+    <div id="sidebar" class="bg-white shadow-xl lg:shadow-none p-6 flex flex-col border-r border-gray-200 h-full">
+        
+        <!-- Sidebar Header: Enterprise AI -->
+        <div class="flex items-center space-x-3 mb-8 pl-2 lg:pl-0">
+            <i class="fas fa-microchip text-xl text-blue-600"></i>
+            <div class="font-bold text-xl text-gray-800">Enterprise AI</div>
+            <!-- Close Button for Mobile -->
+            <button class="ml-auto lg:hidden text-gray-400 hover:text-gray-600" onclick="document.body.classList.remove('sidebar-active')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <!-- New Conversation Button -->
+        <button id="new-conversation-btn" class="flex items-center justify-center space-x-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-md transition duration-150 ease-in-out mb-8">
+            <i class="fas fa-plus-circle"></i>
+            <span>New Conversation</span>
+        </button>
+
+        <!-- Main Navigation -->
+        <nav class="space-y-1 text-gray-600 font-medium flex-grow overflow-y-auto pr-1 custom-scrollbar">
+            <!-- Chats -->
+            <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-xl bg-blue-50 text-blue-700">
+                <i class="fas fa-comments w-5 text-center"></i>
+                <span>Chats</span>
+            </a>
+            <!-- Documents (This is where the upload UI will be revealed) -->
+            <a href="#" id="documents-nav" class="nav-item flex items-center space-x-3 p-3 rounded-xl hover:bg-gray-100 transition">
+                <i class="fas fa-file-alt w-5 text-center"></i>
+                <span>Documents</span>
+            </a>
+            <!-- Tasks -->
+            <!-- <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-xl hover:bg-gray-100 transition">
+                <i class="fas fa-tasks w-5 text-center"></i>
+                <span>Tasks</span>
+                <span class="ml-auto text-xs bg-red-500 text-white rounded-full px-2 py-0.5">3</span>
+            </a> -->
+            <!-- Insights -->
+            <!-- <a href="#" class="nav-item flex items-center space-x-3 p-3 rounded-xl hover:bg-gray-100 transition">
+                <i class="fas fa-chart-line w-5 text-center"></i>
+                <span>Insights</span>
+            </a> -->
+
+            <!-- Document Upload Area (Toggleable) -->
+            <div id="document-upload-area" class="mt-4 p-4 bg-gray-50 rounded-xl hidden flex-col space-y-3 border border-gray-200">
+                <h3 class="font-semibold text-sm text-gray-700">Document Upload</h3>
+                <input type="file" id="file-input" class="w-full text-xs file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                <button onclick="uploadDocument()" class="w-full py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded-lg transition duration-150 ease-in-out disabled:bg-gray-400" id="upload-button" disabled>
+                    Upload & Process
+                </button>
+                <div id="upload-status" class="text-xs min-h-[1.5rem] text-gray-500 break-words">Awaiting file selection.</div>
+            </div>
+
+            <!-- Recent Chats -->
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <h3 class="uppercase text-xs font-semibold text-gray-500 mb-3 px-2">Recent</h3>
+                <ul id="recent-chats-list" class="space-y-1 text-sm">
+                    <li class="text-gray-400 text-xs italic p-2">No recent chats</li>
+                </ul>
+            </div>
+        </nav>
+        
+        <!-- System Status Footer -->
+        <div class="mt-auto pt-6 border-t border-gray-200 flex items-center space-x-2">
+            <div class="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
+            <div class="text-sm font-medium text-gray-700">System Status: <span class="text-green-600">Online</span></div>
+        </div>
+
+    </div>
+    
+    <!-- Main Chat Container -->
+    <div id="main-container" class="flex-1 flex flex-col h-full min-w-0 bg-white relative w-full lg:w-auto">
+        
+        <!-- Main Chat Header -->
+        <header class="bg-white border-b border-gray-200 p-4 flex items-center justify-between flex-shrink-0 z-10">
+            <!-- Left: Icon & Title -->
+            <div class="flex items-center space-x-4 pl-12 lg:pl-0"> <!-- Padding left on mobile for menu button -->
+                <i class="fas fa-robot text-2xl text-blue-600 hidden sm:block"></i>
+                <div class="min-w-0">
+                    <h1 class="text-lg sm:text-xl font-bold text-gray-800 truncate">Enterprise AI Assistant</h1>
+                    <div class="flex items-center text-xs sm:text-sm text-gray-500 truncate max-w-[200px] sm:max-w-md">
+                        <span class="text-green-500 mr-2 flex-shrink-0"><i class="fas fa-circle text-[8px] sm:text-xs"></i></span>
+                        <span id="header-status-text" class="truncate">Active · Secure Connection</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Profile and Controls -->
+            <div class="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
+                <!-- Delete Session Button -->
+                <button id="delete-session-btn" class="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition duration-150" title="Delete Session">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+                <div class="h-6 w-px bg-gray-300 mx-1 hidden sm:block"></div>
+                <button class="p-2 text-gray-500 hover:text-gray-700 hidden sm:block"><i class="far fa-bell"></i></button>
+                <button class="p-2 text-gray-500 hover:text-gray-700 hidden sm:block"><i class="fas fa-cog"></i></button>
+                <div class="flex items-center space-x-2 border-l pl-2 sm:pl-4 border-gray-300">
+                    <div class="w-8 h-8 sm:w-10 sm:h-10 bg-pink-500 text-white font-semibold rounded-full flex items-center justify-center text-xs sm:text-sm">SM</div>
+                    <span class="font-medium text-gray-700 hidden md:block text-sm">Sarah Mitchell</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Chat History Area -->
+        <main id="chat-history" class="flex-grow p-4 md:p-8 space-y-6 overflow-y-auto relative w-full">
+            
+            <!-- Empty State / Start Window -->
+            <div id="empty-state" class="empty-state hidden px-4">
+                <div class="bg-blue-50 p-6 rounded-full mb-6 animate-fade-in-up">
+                    <i class="fas fa-robot text-4xl text-blue-600"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2 text-center">How can I help you today?</h2>
+                <p class="text-gray-500 max-w-md mb-8 text-center text-sm sm:text-base">I can help you analyze data, summarize documents, or answer questions about company policies.</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+                    <button class="suggestion-chip group p-4 border border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 text-left transition text-sm text-gray-700 bg-white shadow-sm" onclick="prefillInput('Summarize the Q3 financial report')">
+                        <span class="font-semibold block mb-1 group-hover:text-blue-700">Summarize Report</span>
+                        <span class="text-gray-500 text-xs group-hover:text-blue-600">Analyze Q3 financial data</span>
+                    </button>
+                    <button class="suggestion-chip group p-4 border border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 text-left transition text-sm text-gray-700 bg-white shadow-sm" onclick="prefillInput('What is the policy for remote work?')">
+                        <span class="font-semibold block mb-1 group-hover:text-blue-700">HR Policy</span>
+                        <span class="text-gray-500 text-xs group-hover:text-blue-600">Query remote work guidelines</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages will be injected here by JavaScript -->
+            
+            <div id="loading-indicator" class="hidden flex justify-start w-full">
+                <i class="fas fa-robot text-xl text-blue-600 mr-3 mt-1 flex-shrink-0"></i>
+                <div class="ai-chat-bubble p-4 rounded-xl rounded-tl-none max-w-[85%] sm:max-w-lg">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+                        <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-75"></div>
+                        <div class="w-2 h-2 bg-gray-400 rounded-full animate-pulse delay-150"></div>
+                        <span class="text-sm text-gray-600 ml-2">Thinking...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Chat Input Area -->
+        <footer class="p-4 border-t border-gray-200 bg-white flex-shrink-0 w-full z-10">
+            <div class="max-w-4xl mx-auto w-full">
+                <div class="relative flex items-center bg-gray-50 border border-gray-300 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400 transition-all">
+                    
+                    <textarea id="user-input" class="w-full resize-none p-4 pr-24 bg-transparent text-gray-700 placeholder-gray-400 focus:outline-none h-14 max-h-32 text-sm sm:text-base" 
+                              placeholder="Ask anything... (Shift + Enter for new line)"></textarea>
+
+                    <div class="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
+                        <!-- Search Icon (Decorative) -->
+                        <button class="p-2 text-gray-400 hover:text-gray-600 rounded-full transition duration-150 hidden sm:block">
+                            <i class="fas fa-search"></i>
+                        </button>
+                        <!-- Send Button -->
+                        <button id="send-button" class="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md transition duration-150 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center w-10 h-10" disabled>
+                            <i class="fas fa-paper-plane text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="text-center text-[10px] sm:text-xs text-gray-400 mt-2">Secure Enterprise Cloud</div>
+        </footer>
+
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const BASE_URL = "http://localhost:8000";
+        const STORAGE_KEY_THREAD = 'enterprise_ai_current_thread';
+        const STORAGE_KEY_HISTORY = 'enterprise_ai_chat_history'; // Key prefix
+        const STORAGE_KEY_RECENT = 'enterprise_ai_recent_threads';
+
+        let currentThreadId = null;
+        
+        // DOM Elements
+        const chatHistoryEl = document.getElementById('chat-history');
+        const emptyStateEl = document.getElementById('empty-state');
+        const userInputEl = document.getElementById('user-input');
+        const sendButtonEl = document.getElementById('send-button');
+        const loadingIndicatorEl = document.getElementById('loading-indicator');
+        const uploadStatusEl = document.getElementById('upload-status');
+        const fileInputEl = document.getElementById('file-input');
+        const uploadButtonEl = document.getElementById('upload-button');
+        const menuButtonEl = document.getElementById('menu-button');
+        const headerStatusTextEl = document.getElementById('header-status-text');
+        const deleteSessionBtnEl = document.getElementById('delete-session-btn');
+        const recentChatsListEl = document.getElementById('recent-chats-list');
+        const newConversationBtnEl = document.getElementById('new-conversation-btn');
+
+        // Configure Marked.js
+        marked.use({
+            breaks: true, // Convert newlines to <br>
+            gfm: true     // GitHub Flavored Markdown
+        });
+
+        // Create an AI bubble that we can update progressively.
+        // Returns the contentDiv element so caller can update innerHTML as chunks arrive.
+        function addStreamingAIBubble(initialHtml = '') {
+            toggleEmptyState(false);
+
+            const messageDiv = document.createElement('div');
+            const contentDiv = document.createElement('div');
+
+            // icon
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-robot text-lg sm:text-xl text-blue-600 mr-2 sm:mr-3 mt-1 flex-shrink-0';
+            messageDiv.appendChild(icon);
+
+            contentDiv.classList.add('ai-chat-bubble', 'rounded-tl-none', 'text-gray-800', 'markdown-body');
+            contentDiv.innerHTML = initialHtml || '<em>Streaming…</em>';
+            contentDiv.classList.add('p-3', 'sm:p-4', 'rounded-xl', 'max-w-[85%]', 'sm:max-w-lg', 'md:max-w-2xl', 'break-words', 'leading-relaxed');
+
+            messageDiv.classList.add('flex', 'justify-start', 'animate-fade-in');
+            messageDiv.appendChild(contentDiv);
+
+            // Insert before loading indicator
+            chatHistoryEl.insertBefore(messageDiv, loadingIndicatorEl);
+            chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+
+            return contentDiv;
+        }
+
+        // --- Session Management Functions ---
+        function initializeSession() {
+            // 1. Try to get existing thread ID
+            const storedThreadId = localStorage.getItem(STORAGE_KEY_THREAD);
+
+            if (storedThreadId) {
+                currentThreadId = storedThreadId;
+                loadChatHistory(currentThreadId);
+            } else {
+                createNewSession();
+            }
+
+            updateStatusWithThreadId();
+            renderRecentChats();
+        }
+
+        function createNewSession() {
+            currentThreadId = crypto.randomUUID();
+            localStorage.setItem(STORAGE_KEY_THREAD, currentThreadId);
+            
+            // Clear current view
+            clearChatUI();
+            
+            // Show empty state
+            toggleEmptyState(true);
+            
+            updateStatusWithThreadId();
+            // Don't add to recent yet, wait until first message
+            
+            // On mobile, close sidebar when starting new chat
+            document.body.classList.remove('sidebar-active');
+        }
+
+        function deleteCurrentSession() {
+            if (!confirm("Are you sure you want to delete this session history?")) return;
+
+            // Remove history from storage
+            localStorage.removeItem(`${STORAGE_KEY_HISTORY}_${currentThreadId}`);
+            
+            // Remove from recent list
+            removeFromRecentList(currentThreadId);
+
+            // Create new fresh session
+            createNewSession();
+            renderRecentChats();
+        }
+
+        function updateStatusWithThreadId() {
+            headerStatusTextEl.textContent = `Chat ID: ${currentThreadId}`;
+            headerStatusTextEl.title = currentThreadId; // Tooltip shows full ID
+        }
+
+        function loadChatHistory(threadId) {
+            const historyJson = localStorage.getItem(`${STORAGE_KEY_HISTORY}_${threadId}`);
+            clearChatUI();
+            
+            if (historyJson) {
+                const history = JSON.parse(historyJson);
+                if (history.length > 0) {
+                    toggleEmptyState(false);
+                    history.forEach(msg => {
+                        addMessageBubble(msg.sender, msg.content, false); // false = don't save again
+                    });
+                } else {
+                    toggleEmptyState(true);
+                }
+            } else {
+                toggleEmptyState(true);
+            }
+        }
+
+        function saveMessageToHistory(threadId, sender, content) {
+            const key = `${STORAGE_KEY_HISTORY}_${threadId}`;
+            let history = JSON.parse(localStorage.getItem(key) || "[]");
+            history.push({ sender, content, timestamp: new Date().toISOString() });
+            localStorage.setItem(key, JSON.stringify(history));
+
+            // Update Recent List if it's the first message or just to bump it up
+            addToRecentList(threadId, content);
+        }
+
+        // --- Recent List Management ---
+
+        function getRecentThreads() {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY_RECENT) || "[]");
+        }
+
+        function addToRecentList(threadId, lastMessagePreview) {
+            let recents = getRecentThreads();
+            // Remove if exists (to move to top)
+            recents = recents.filter(item => item.id !== threadId);
+            
+            // Add to top
+            recents.unshift({
+                id: threadId,
+                preview: lastMessagePreview.substring(0, 30) + (lastMessagePreview.length > 30 ? '...' : ''),
+                timestamp: Date.now()
+            });
+
+            // Limit to 5
+            if (recents.length > 5) recents.pop();
+
+            localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(recents));
+            renderRecentChats();
+        }
+
+        function removeFromRecentList(threadId) {
+            let recents = getRecentThreads();
+            recents = recents.filter(item => item.id !== threadId);
+            localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(recents));
+        }
+
+        function renderRecentChats() {
+            const recents = getRecentThreads();
+            recentChatsListEl.innerHTML = '';
+
+            if (recents.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'text-gray-400 text-xs italic p-2';
+                li.textContent = 'No recent chats';
+                recentChatsListEl.appendChild(li);
+                return;
+            }
+
+            recents.forEach(chat => {
+                const li = document.createElement('li');
+                li.className = `flex items-center p-2 rounded-xl cursor-pointer hover:bg-gray-100 transition ${chat.id === currentThreadId ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`;
+                li.innerHTML = `
+                    <i class="far fa-clock text-sm mr-3 flex-shrink-0"></i>
+                    <div class="flex-grow min-w-0">
+                        <div class="truncate text-sm font-medium" title="${chat.preview}">${chat.preview || 'New Chat'}</div>
+                        <div class="text-[10px] text-gray-400">${new Date(chat.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                    </div>
+                `;
+                li.onclick = () => switchSession(chat.id);
+                recentChatsListEl.appendChild(li);
+            });
+        }
+
+        function switchSession(threadId) {
+            if (threadId === currentThreadId) return;
+            currentThreadId = threadId;
+            localStorage.setItem(STORAGE_KEY_THREAD, currentThreadId);
+            loadChatHistory(threadId);
+            updateStatusWithThreadId();
+            renderRecentChats(); // Re-render to update active styling
+            
+            // Close sidebar on mobile
+            document.body.classList.remove('sidebar-active');
+        }
+
+        // --- UI Rendering ---
+
+        function toggleEmptyState(show) {
+            if (show) {
+                emptyStateEl.classList.remove('hidden');
+            } else {
+                emptyStateEl.classList.add('hidden');
+            }
+        }
+
+        function clearChatUI() {
+            // Remove all message bubbles but keep loading indicator and empty state
+            const bubbles = chatHistoryEl.querySelectorAll('.flex.justify-start, .flex.justify-end');
+            bubbles.forEach(b => {
+                if (b.id !== 'loading-indicator') b.remove();
+            });
+        }
+
+        function addMessageBubble(sender, content, save = true) {
+            // Hide empty state if showing
+            toggleEmptyState(false);
+
+            const messageDiv = document.createElement('div');
+            const contentDiv = document.createElement('div');
+            
+            let formattedContent;
+
+            if (sender === 'user') {
+                // User message: Plain text to avoid XSS from user input
+                // We create a text node to let browser escape it, then convert to HTML string for styling (newlines)
+                const tempDiv = document.createElement('div');
+                tempDiv.textContent = content;
+                formattedContent = tempDiv.innerHTML.replace(/\n/g, '<br>');
+                
+                contentDiv.classList.add('user-chat-bubble', 'rounded-br-none');
+                messageDiv.classList.add('flex', 'justify-end', 'animate-fade-in');
+            } else {
+                // AI message: Parse Markdown
+                try {
+                    formattedContent = marked.parse(content);
+                } catch (e) {
+                    console.error("Markdown parsing error:", e);
+                    formattedContent = content.replace(/\n/g, '<br>');
+                }
+
+                contentDiv.classList.add('ai-chat-bubble', 'rounded-tl-none', 'text-gray-800', 'markdown-body');
+                messageDiv.classList.add('flex', 'justify-start', 'animate-fade-in');
+                
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-robot text-lg sm:text-xl text-blue-600 mr-2 sm:mr-3 mt-1 flex-shrink-0';
+                messageDiv.appendChild(icon);
+            }
+
+            contentDiv.innerHTML = formattedContent;
+            contentDiv.classList.add('p-3', 'sm:p-4', 'rounded-xl', 'max-w-[85%]', 'sm:max-w-lg', 'md:max-w-2xl', 'break-words', 'leading-relaxed');
+
+            messageDiv.appendChild(contentDiv);
+            
+            // Insert before loading indicator
+            chatHistoryEl.insertBefore(messageDiv, loadingIndicatorEl);
+            
+            // Scroll to bottom
+            chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+
+            if (save) {
+                saveMessageToHistory(currentThreadId, sender, content);
+            }
+        }
+
+        function prefillInput(text) {
+            userInputEl.value = text;
+            userInputEl.focus();
+            userInputEl.dispatchEvent(new Event('input')); // Trigger button enable logic
+        }
+
+        // --- API Interaction ---
+
+        async function fetchWithBackoff(url, options, maxRetries = 5) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    
+                    if (response.ok) {
+                        return response;
+                    }
+
+                    if (response.status >= 400 && response.status < 500) {
+                        const errorText = await response.text();
+                        const err = new Error(`Client Error (${response.status}): ${errorText}`);
+                        err.isClientError = true;
+                        throw err;
+                    }
+
+                    const errorText = await response.text();
+                    throw new Error(`Server Error (${response.status}): ${errorText}`);
+
+                } catch (error) {
+                    if (error.isClientError) {
+                         console.error("Client Error detected, aborting retries:", error.message);
+                         throw error;
+                    }
+                    if (i === maxRetries - 1) {
+                        console.error('Fetch failed after multiple retries:', error);
+                        throw error;
+                    }
+                    const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                    console.warn(`Attempt ${i+1} failed. Retrying in ${Math.round(delay)}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        function toggleInputState(isEnabled) {
+            sendButtonEl.disabled = !isEnabled;
+            userInputEl.disabled = !isEnabled;
+            if (isEnabled) {
+                loadingIndicatorEl.classList.add('hidden');
+            } else {
+                loadingIndicatorEl.classList.remove('hidden');
+                chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+            }
+        }
+
+        // async function sendMessage() {
+        //     const userQuery = userInputEl.value.trim();
+        //     if (!userQuery) return;
+
+        //     addMessageBubble('user', userQuery);
+        //     userInputEl.value = '';
+        //     toggleInputState(false);
+
+        //     try {
+        //         const url = new URL(`${BASE_URL}/chat/`);
+        //         url.searchParams.append('user_query', userQuery);
+        //         url.searchParams.append('thread_id', currentThreadId);
+
+        //         const response = await fetchWithBackoff(url, { method: 'POST' });
+        //         const data = await response.json();
+
+        //         if (data.status === 'success' && data.response) {
+        //             addMessageBubble('ai', data.response);
+        //         } else {
+        //             addMessageBubble('ai', `**Error:** Details: ${data.response || 'Unknown error'}`);
+        //         }
+
+        //     } catch (error) {
+        //         console.error("Chat API call failed:", error);
+        //         let msg = `**Connection Error:** Failed to connect to the backend.`;
+        //         if (error.message.includes('Client Error')) {
+        //             msg = `**API Error:** The server rejected the request (${error.message}). Please check the backend logs.`;
+        //         }
+        //         addMessageBubble('ai', msg);
+        //     } finally {
+        //         toggleInputState(true);
+        //         setTimeout(renderRecentChats, 100);
+        //     }
+        // }
+
+        async function sendMessage() {
+            const userQuery = userInputEl.value.trim();
+            if (!userQuery) return;
+
+            // Add user bubble like before
+            addMessageBubble('user', userQuery);
+            userInputEl.value = '';
+            toggleInputState(false);
+
+            // Create streaming AI bubble and keep reference to its content div
+            const aiContentDiv = addStreamingAIBubble();
+            let buffer = ""; // accumulate raw markdown text
+
+            // Build SSE URL (GET). Make sure the backend exposes /chat/stream as described.
+            const url = new URL(`${BASE_URL}/chat/stream`);
+            url.searchParams.append('query', userQuery);
+            url.searchParams.append('thread_id', currentThreadId);
+            url.searchParams.append('user_id', '1'); // change if needed
+
+            let evtSource;
+            try {
+                evtSource = new EventSource(url.toString());
+
+                evtSource.onmessage = (e) => {
+                    const data = e.data;
+                    if (!data) return;
+
+                    // Server sends sentinel when finished
+                    if (data === '[DONE]') {
+                        // finalize: save to history and clean up
+                        evtSource.close();
+                        // Save final markdown text to history (plain markdown)
+                        saveMessageToHistory(currentThreadId, 'ai', buffer);
+                        toggleInputState(true);
+                        setTimeout(renderRecentChats, 100);
+                        return;
+                    }
+
+                    // Append incoming chunk to buffer and render parsed markdown progressively
+                    // Note: incoming chunk may be partial markdown; we append and re-parse whole buffer.
+                    buffer += data;
+
+                    try {
+                        // Use marked to parse markdown into HTML
+                        const html = marked.parse(buffer);
+                        aiContentDiv.innerHTML = html;
+                    } catch (err) {
+                        // On parse failure, fallback: escape and show raw
+                        console.error('Markdown parse error while streaming:', err);
+                        // Simple safe fallback: replace newlines with <br>
+                        aiContentDiv.innerHTML = buffer.replace(/\n/g, '<br>');
+                    }
+
+                    // Auto-scroll
+                    chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+                };
+
+                evtSource.onerror = (err) => {
+                    console.error("SSE error:", err);
+                    // show some user-friendly error in AI bubble
+                    aiContentDiv.innerHTML += `<p class="text-red-500"><strong>Error:</strong> Connection lost while streaming. Falling back to final response retrieval.</p>`;
+                    evtSource.close();
+                    toggleInputState(true);
+                    // Optional: try to fetch final text via non-stream endpoint if available
+                };
+
+            } catch (networkErr) {
+                console.error("Failed to open SSE connection:", networkErr);
+                // Show fallback error
+                addMessageBubble('ai', `**Connection Error:** Unable to open streaming connection.`);
+                toggleInputState(true);
+                setTimeout(renderRecentChats, 100);
+            }
+        }
+
+        // --- Document Upload ---
+
+        fileInputEl.addEventListener('change', () => {
+            if (fileInputEl.files.length > 0) {
+                uploadButtonEl.disabled = false;
+                uploadStatusEl.textContent = `File selected: ${fileInputEl.files[0].name}`;
+                uploadStatusEl.classList.remove('text-gray-500', 'text-red-500', 'text-green-500');
+                uploadStatusEl.classList.add('text-blue-600');
+            } else {
+                uploadButtonEl.disabled = true;
+                uploadStatusEl.textContent = 'Awaiting file selection.';
+                uploadStatusEl.classList.add('text-gray-500');
+            }
+        });
+
+        async function uploadDocument() {
+            const file = fileInputEl.files[0];
+            if (!file) return;
+
+            uploadButtonEl.disabled = true;
+            uploadStatusEl.textContent = `Uploading "${file.name}"...`;
+            uploadStatusEl.classList.add('text-gray-600', 'animate-pulse');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetchWithBackoff(`${BASE_URL}/uploadfile/`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+                uploadStatusEl.classList.remove('animate-pulse');
+
+                if (data.status === 'success') {
+                    uploadStatusEl.textContent = `Success! "${data.filename}" processed.`;
+                    uploadStatusEl.classList.add('text-green-500');
+                    fileInputEl.value = ''; 
+                } else {
+                    uploadStatusEl.textContent = `Failed: ${data.message || 'Unknown error'}`;
+                    uploadStatusEl.classList.add('text-red-500');
+                }
+
+            } catch (error) {
+                uploadStatusEl.classList.remove('animate-pulse');
+                uploadStatusEl.classList.add('text-red-500');
+                uploadStatusEl.textContent = `Connection Error during upload.`;
+            } finally {
+                if (fileInputEl.files.length > 0) uploadButtonEl.disabled = false;
+            }
+        }
+
+        // --- Event Listeners ---
+
+        sendButtonEl.addEventListener('click', sendMessage);
+
+        userInputEl.addEventListener('input', () => {
+            const hasText = userInputEl.value.trim().length > 0;
+            sendButtonEl.disabled = !hasText || !loadingIndicatorEl.classList.contains('hidden');
+            
+            userInputEl.style.height = 'auto';
+            userInputEl.style.height = (userInputEl.scrollHeight) + 'px';
+            if(userInputEl.value === '') userInputEl.style.height = '3.5rem';
+        });
+
+        userInputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!sendButtonEl.disabled) sendMessage();
+            }
+        });
+
+        newConversationBtnEl.addEventListener('click', createNewSession);
+        deleteSessionBtnEl.addEventListener('click', deleteCurrentSession);
+
+        document.getElementById('documents-nav').addEventListener('click', (e) => {
+            e.preventDefault();
+            const area = document.getElementById('document-upload-area');
+            if (area.classList.contains('hidden')) {
+                area.classList.remove('hidden');
+                area.classList.add('flex');
+            } else {
+                area.classList.add('hidden');
+                area.classList.remove('flex');
+            }
+        });
+
+        menuButtonEl.addEventListener('click', () => {
+            document.body.classList.toggle('sidebar-active');
+        });
+
+        document.body.addEventListener('click', (e) => {
+             if (window.innerWidth < 1024 && document.body.classList.contains('sidebar-active')) {
+                 if (!document.getElementById('sidebar').contains(e.target) && !menuButtonEl.contains(e.target)) {
+                     document.body.classList.remove('sidebar-active');
+                 }
+             }
+        });
+
+        // --- Initialization ---
+        window.onload = () => {
+            initializeSession();
+            if (window.innerWidth >= 1024) userInputEl.focus();
+        };
+
+    </script>
+</body>
+</html>

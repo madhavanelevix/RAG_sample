@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FastAPI App: Upload & Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 50px; }
+        .container { display: flex; gap: 40px; }
+        .card { border: 1px solid #ccc; padding: 20px; border-radius: 8px; flex: 1; }
+        .card h2 { margin-top: 0; }
+        .result { margin-top: 20px; padding: 15px; border: 1px dashed #007bff; background-color: #f7f9fc; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>FastAPI Combined Services</h1>
+    <div class="container">
+        <div class="card">
+            <h2>📤 1. File Upload</h2>
+            <form id="uploadForm" action="/api/upload/" method="post" enctype="multipart/form-data">
+                <input type="file" name="file" required>
+                <button type="submit">Upload File</button>
+            </form>
+            <div id="uploadResult" class="result"></div>
+        </div>
+
+        <div class="card">
+            <h2>💬 2. AI Chat</h2>
+            <form id="chatForm">
+                <input type="text" name="prompt" placeholder="Ask the AI something..." required style="width: 80%;">
+                <button type="submit">AI Chat</button>
+            </form>
+            <div id="chatResult" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript to handle form submission and display results without page reload
+        
+        // --- File Upload Logic ---
+        document.getElementById('uploadForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const resultDiv = document.getElementById('uploadResult');
+            resultDiv.innerHTML = 'Uploading...';
+            
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch(e.target.action, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `**Status:** ${data.status}\n**Message:** ${data.message}\n**Filename:** ${data.filename}`;
+                } else {
+                    resultDiv.innerHTML = `**Error:** ${data.detail || data.message}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `An unexpected error occurred: ${error.message}`;
+            }
+        };
+
+        // --- AI Chat Logic ---
+        document.getElementById('chatForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const resultDiv = document.getElementById('chatResult');
+            resultDiv.innerHTML = 'Sending prompt...';
+            
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('/api/chat/', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `**Prompt:** ${data.prompt}\n**AI Response:** ${data.response}`;
+                } else {
+                    resultDiv.innerHTML = `**Error:** ${data.detail || data.message}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `An unexpected error occurred: ${error.message}`;
+            }
+        };
+    </script>
+</body>
+</html>
+ 
