@@ -20,16 +20,18 @@ from utils.vector import retrive
 from dotenv import load_dotenv
 load_dotenv()
 
-collection_name = "uploaded_documents"
+collection_name = os.getenv("VECTOR_COLLECTION")
 
 non_prompt = """You are a strict **RAG Agent**.
 
 1.  **Tool:** **MUST** call `data_retriever` with 2-4 keyword query. Try 3 distinct queries.
 2.  **Document Priority:** Answer **ONLY** using retrieved documents for specific/technical queries, providing **max detail**. Cite sources for *every point*.
-3.  **Citation Format:** `<Answer Point> [🔗](<URL>) (Name: <Doc Name>, Page: <Page #>)`.
+3.  **Citation Format:** <Answer Point> `[🔗](<URL>)`or`(Name: <Doc Name>, Page: <Page #>)`.
 4.  **Source Ending:**
     * **Document:** `Source: Document Knowledge [🔗](<URL>)`
     * **General Query (Common knowledge only):** `Source: [My knowledge (AI responses)] for (Gemini) knowledge based`
+5.  **Respons:**
+    * You start with normal greating. and give answers in proper markdowm format. 
 
 If no documents after 3 attempts, say 'No relevant documents found'.
 """

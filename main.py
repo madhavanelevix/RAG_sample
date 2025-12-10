@@ -81,20 +81,26 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
     # try:
         # Call the RAG Agent
         ai_respons = RAG_agent(user_message=user_query, thread_id=thread_id)
-        print(type(ai_respons), f"AI Response: {ai_respons}")
-        try:
-            if ai_respons == list:
-                ai_respons = ai_respons[0]["text"]
+        print(type(ai_respons))
+        # try:
+        if isinstance(ai_respons, list):
+            respons = ai_respons[0]["text"]
+            print("list response", respons)
             
-        except Exception as e:
-            print("Error processing AI response:", e)
-            ai_respons = str(ai_respons)
-            
-        return JSONResponse(content={
-            "status": "success",
-            "user_query": user_query,
-            "response": ai_respons
-        })
+            return JSONResponse(content={
+                "status": "success",
+                "user_query": user_query,
+                "response": respons
+            })
+        # except Exception as e:
+        #     print("Error processing AI response:", e)
+        #     ai_respons = str(ai_respons)
+        else: 
+            return JSONResponse(content={
+                "status": "success",
+                "user_query": user_query,
+                "response": ai_respons
+            })
     
     # except Exception as e:
     #     print("An unexpected error occurred:", e)
