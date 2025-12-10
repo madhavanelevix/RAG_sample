@@ -81,7 +81,15 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
     # try:
         # Call the RAG Agent
         ai_respons = RAG_agent(user_message=user_query, thread_id=thread_id)
-        
+        print(type(ai_respons), f"AI Response: {ai_respons}")
+        try:
+            if ai_respons == list:
+                ai_respons = ai_respons[0]["text"]
+            
+        except Exception as e:
+            print("Error processing AI response:", e)
+            ai_respons = str(ai_respons)
+            
         return JSONResponse(content={
             "status": "success",
             "user_query": user_query,
@@ -97,4 +105,4 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
     #     }, status_code=500)
 
 
-# uvicorn maintemp:app --reload
+# uvicorn main:app --reload
