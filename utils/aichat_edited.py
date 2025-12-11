@@ -1,6 +1,7 @@
-import os, uuid
+import os, uuid, json
+from pathlib import Path
 # from langchain_google_genai import ChatGoogleGenerativeAI
-# from langgraph.checkpoint.memory import InMemorySaver, MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver, MemorySaver
 
 from langgraph.graph import MessagesState, START, StateGraph
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -15,6 +16,8 @@ from langchain.tools import tool
 
 from psycopg_pool import ConnectionPool
 
+from utils.json_checkpointer import JSONCheckpointSaver
+from utils.pgsql_checkpointer import PostgresCheckpointSaver
 from utils.vector import retrive
 
 from dotenv import load_dotenv
@@ -26,11 +29,12 @@ non_prompt = """You are a strict **RAG Agent**.
 
 1.  **Tool:** **MUST** call `data_retriever` with 2-4 keyword query. Try 3 distinct queries.
 2.  **Document Priority:** Answer **ONLY** using retrieved documents for specific/technical queries, providing **max detail**. Cite sources for *every point*.
-3.  **Citation Format:** <Answer Point> `[🔗](<URL>)`or`(Name: <Doc Name>, Page: <Page #>)`.
-4.  **Source Ending:**
+3.  **Conversation Flow:** Your conversation flow only based on **current session** and **history** not the overall chat history.
+4.  **Citation Format:** <Answer Point> `[🔗](<URL>)`or`(Name: <Doc Name>, Page: <Page #>)`.
+5.  **Source Ending:**
     * **Document:** `Source: Document Knowledge [🔗](<URL>)`
-    * **General Query (Common knowledge only):** `Source: [My knowledge (AI responses)] for (Gemini) knowledge based`
-5.  **Respons:**
+    * **General Query (Common knowledge only):** `Source: My knowledge (AI responses)`
+6.  **Respons:**
     * You start with normal greating. and give answers in proper markdowm format. 
 
 If no documents after 3 attempts, say 'No relevant documents found'.
@@ -57,9 +61,10 @@ def data_retriever(user_request: str):
     except:
         return "❌ Error retrieving content"
 
-DB_URI = os.getenv("DATABASE_URL")
+# DB_URI = os.getenv("DATABASE_URL")
+DB_URL = os.getenv("PG_VECTOR")
 llm = os.getenv("MODEL")
-print(llm, DB_URI)
+print(llm, DB_URL)
 
 rag_agent = create_agent(
     name="RAG_agent",
@@ -68,55 +73,155 @@ rag_agent = create_agent(
     system_prompt=non_prompt,
 )
 
-_connection_pool = None
-_store = None
+# _connection_pool = None
+# _store = None
 _checkpointer = None
 _graph = None
+# def get_graph():
+#     global _connection_pool, _store, _checkpointer, _graph
+#     if _graph is not None:
+#         return _graph
+#     # Create pool only once
+#     _connection_pool = ConnectionPool(
+#         conninfo=DB_URI,
+#         min_size=1,
+#         max_size=10,
+#         timeout=30.0
+#     )
+#     # Get a connection from the pool
+#     conn = _connection_pool.getconn()
+#     # Create store and checkpointer using the same connection
+#     _store = PostgresStore(conn)
+#     _checkpointer = PostgresSaver(conn)
+#     # Setup tables (idempotent – safe to run multiple times)
+#     _store.setup()
+#     _checkpointer.setup()
+#     _connection_pool.putconn(conn)
+#     # Reusable call_model that uses the global store
+#     def call_model(state: MessagesState, config, *, store: BaseStore = _store):
+#         user_id = config["configurable"]["user_id"]
+#         namespace = ("memories", user_id)
+#         last_user_msg = state["messages"][-1].content
+#         # Load memories
+#         memories = store.search(namespace, query=last_user_msg)
+#         memory_text = "\n".join([m.value["data"] for m in memories]) if memories else ""
+#         sys_msg = f"USER_MEMORIES:\n{memory_text}"
+#         # Store new memory if requested
+#         if "remember" in last_user_msg.lower():
+#             memory_value = last_user_msg.lower().replace("remember", "").strip()
+#             if memory_value:
+#                 store.put(namespace, str(uuid.uuid4()), {"data": memory_value})
+        
+#         # FIXED: Use ALL messages from state (includes history from checkpointer)
+#         # Only prepend system message if not already present
+#         messages = state["messages"]
+#         if not messages or messages[0].type != "system":
+#             messages = [{"role": "system", "content": sys_msg}] + messages
+        
+#         # Call the agent with full conversation history
+#         response = rag_agent.invoke({"messages": messages}, config)
+#         return {"messages": response["messages"]}
+#     # Build graph once
+#     builder = StateGraph(MessagesState)
+#     builder.add_node("call_model", call_model)
+#     builder.add_edge(START, "call_model")
+#     _graph = builder.compile(
+#         store=_store,
+#         checkpointer=_checkpointer,
+#     )
+#     return _graph
+
+# # Lines 79-139 - REPLACE entire get_graph function
+# def get_graph():
+#     global _checkpointer, _graph
+#     if _graph is not None:
+#         return _graph
+    
+#     # Use JSON file-based checkpointer
+#     _checkpointer = JSONCheckpointSaver(sessions_folder="sessions")
+    
+#     # Simple in-memory store for memories (or you can make this JSON-based too)
+#     from langgraph.store.memory import InMemoryStore
+#     _store = InMemoryStore()
+    
+#     # Reusable call_model
+#     def call_model(state: MessagesState, config, *, store: BaseStore = _store):
+#         user_id = config["configurable"]["user_id"]
+#         namespace = ("memories", user_id)
+        
+#         # Get all messages from state (includes history)
+#         messages = state.get("messages", [])
+        
+#         if not messages:
+#             return {"messages": []}
+        
+#         last_user_msg = messages[-1].content if messages else ""
+        
+#         # Load memories
+#         memories = store.search(namespace, query=last_user_msg)
+#         memory_text = "\n".join([m.value["data"] for m in memories]) if memories else ""
+#         sys_msg = f"USER_MEMORIES:\n{memory_text}"
+#         # Store new memory if requested
+#         if "remember" in last_user_msg.lower():
+#             memory_value = last_user_msg.lower().replace("remember", "").strip()
+#             if memory_value:
+#                 store.put(namespace, str(uuid.uuid4()), {"data": memory_value})
+        
+#         # Prepend system message if needed
+#         if not messages or not hasattr(messages[0], 'type') or messages[0].type != "system":
+#             final_messages = [{"role": "system", "content": sys_msg}] + messages
+#         else:
+#             final_messages = messages
+        
+#         # Call the agent with full conversation history
+#         response = rag_agent.invoke({"messages": final_messages}, config)
+#         return {"messages": response["messages"]}
+    
+#     # Build graph
+#     builder = StateGraph(MessagesState)
+#     builder.add_node("call_model", call_model)
+#     builder.add_edge(START, "call_model")
+    
+#     _graph = builder.compile(
+#         store=_store,
+#         checkpointer=_checkpointer,
+#     )
+    
+#     return _graph
+
+# Lines 79-180 - REPLACE entire get_graph function
+_checkpointer = None
+_graph = None
+
 def get_graph():
-    global _connection_pool, _store, _checkpointer, _graph
+    global _checkpointer, _graph
     if _graph is not None:
         return _graph
-    # Create pool only once
-    _connection_pool = ConnectionPool(
-        conninfo=DB_URI,
-        min_size=1,
-        max_size=10,
-        timeout=30.0
-    )
-    # Get a connection from the pool
-    conn = _connection_pool.getconn()
-    # Create store and checkpointer using the same connection
-    _store = PostgresStore(conn)
-    _checkpointer = PostgresSaver(conn)
-    # Setup tables (idempotent – safe to run multiple times)
-    _store.setup()
-    _checkpointer.setup()
-    # Reusable call_model that uses the global store
-    def call_model(state: MessagesState, config, *, store: BaseStore = _store):
-        user_id = config["configurable"]["user_id"]
-        namespace = ("memories", user_id)
-        last_user_msg = state["messages"][-1].content
-        # Load memories
-        memories = store.search(namespace, query=last_user_msg)
-        memory_text = "\n".join([m.value["data"] for m in memories]) if memories else ""
-        sys_msg = f"USER_MEMORIES:\n{memory_text}"
-        # Store new memory if requested
-        if "remember" in last_user_msg.lower():
-            memory_value = last_user_msg.lower().replace("remember", "").strip()
-            if memory_value:
-                store.put(namespace, str(uuid.uuid4()), {"data": memory_value})
-        # Call the agent
-        final_messages = [{"role": "system", "content": sys_msg}] + state["messages"]
-        response = rag_agent.invoke({"messages": final_messages}, config)
+    
+    # Use JSON file-based checkpointer
+    
+    _checkpointer = PostgresCheckpointSaver(postgres_url=DB_URL)
+    # _checkpointer = JSONCheckpointSaver(sessions_folder="sessions")
+    
+    # Build graph with direct RAG agent call
+    def call_rag_agent(state: MessagesState):
+        """Call RAG agent directly without nesting."""
+        messages = state.get("messages", [])
+        
+        if not messages:
+            return {"messages": []}
+        
+        # Call the RAG agent directly
+        response = rag_agent.invoke({"messages": messages})
         return {"messages": response["messages"]}
-    # Build graph once
+    
+    # Build graph
     builder = StateGraph(MessagesState)
-    builder.add_node("call_model", call_model)
-    builder.add_edge(START, "call_model")
-    _graph = builder.compile(
-        store=_store,
-        checkpointer=_checkpointer,
-    )
+    builder.add_node("call_rag_agent", call_rag_agent)
+    builder.add_edge(START, "call_rag_agent")
+    
+    _graph = builder.compile(checkpointer=_checkpointer)
+    
     return _graph
 
 

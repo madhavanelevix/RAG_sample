@@ -17,8 +17,8 @@ def content_spliter(doc):
     print("book\n"*3)
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=20,
+        chunk_size=1000,
+        chunk_overlap=70,
         length_function=len,
         is_separator_regex=False,
     )
@@ -67,4 +67,3 @@ def document_upload_vector(doc_location: str, doc_name: str, collection_name: st
         return "file not supported"
         
 
- 
