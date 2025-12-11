@@ -1,239 +1,236 @@
 import json
-from typing import Optional, Dict, Any, Iterator, Tuple, List
 import uuid
+from typing import Optional, Dict, Any, Iterator, Tuple, List
+from datetime import datetime
 
-# LangGraph/LangChain imports
-from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, CheckpointTuple
-from langchain_core.runnables import RunnableConfig
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
-from datetime import datetime, timezone
-
-# SQLAlchemy imports
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text, LargeBinary, select
-from sqlalchemy.orm import sessionmaker, declarative_base
+# SQLAlchemy Imports
+from sqlalchemy import create_engine, Column, String, Text, Integer, ForeignKey, DateTime
+from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 
-# --- 1. Define the SQLAlchemy Base and Checkpoint Table Model ---
+# LangChain/LangGraph Imports
+from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, CheckpointTuple
+from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import (
+    BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
+)
+
+# --- Database Setup ---
+
 Base = declarative_base()
 
-class CheckpointModel(Base):
-    """SQLAlchemy Model for the LangGraph Checkpoint."""
-    __tablename__ = "checkpoints"
-
-    # The thread_id is used as the primary key for simple overwriting
-    thread_id = Column(String, primary_key=True, index=True)
+class LanggraphMessage(Base):
+    __tablename__ = 'langgraph_messages'
     
-    # Store the actual checkpoint data (serialized JSON)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    checkpoint_id = Column(String(255), ForeignKey('langgraph_checkpoints.id'), index=True, nullable=False)
+    thread_id = Column(String(255), index=True, nullable=False)
+    idx = Column(Integer, nullable=False)
+    message_json = Column(Text, nullable=False)
+    
+    checkpoint = relationship("LanggraphCheckpoint", back_populates="messages")
+
+class LanggraphCheckpoint(Base):
+    __tablename__ = 'langgraph_checkpoints'
+
+    id = Column(String(255), primary_key=True)
+    thread_id = Column(String(255), index=True, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
     checkpoint_data = Column(Text, nullable=False)
-    
-    # Store the timestamp for tracking
-    timestamp = Column(DateTime(timezone=True), default=datetime.now(timezone.utc))
-    
-    # Store metadata (serialized JSON)
     metadata_json = Column(Text, default="{}")
+    new_versions_json = Column(Text, default="{}")
+    
+    messages = relationship(
+        "LanggraphMessage",
+        order_by="LanggraphMessage.idx", 
+        back_populates="checkpoint",
+        cascade="all, delete-orphan"
+    )
 
-    # The LangGraph 'id' field (checkpoint version)
-    checkpoint_id = Column(String, nullable=False, default=lambda: str(uuid.uuid4()))
-
-    def __repr__(self):
-        return (f"CheckpointModel(thread_id='{self.thread_id}', "
-                f"checkpoint_id='{self.checkpoint_id}', "
-                f"timestamp='{self.timestamp}')")
-
-# --- 2. The Checkpoint Saver Class ---
+# --- Custom Checkpoint Saver ---
 
 class PostgresCheckpointSaver(BaseCheckpointSaver):
-    """Saves conversation state to a PostgreSQL database using SQLAlchemy."""
+    """
+    Saves conversation state to PostgreSQL using SQLAlchemy.
+    Includes logic to filter duplicates and maintain clean history.
+    """
     
     def __init__(self, postgres_url: str):
-        """
-        Initializes the checkpointer with the PostgreSQL connection string.
-
-        :param postgres_url: The full PostgreSQL connection URL (e.g., "postgresql+psycopg2://user:pass@host:port/dbname")
-        """
         self.engine = create_engine(postgres_url)
-        # Create the table if it doesn't exist
         Base.metadata.create_all(self.engine)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
-        
-        # Mapping of message types for deserialization (same as your JSON logic)
-        self._message_type_map = {
-            "human": HumanMessage,
-            "ai": AIMessage,
-            "system": SystemMessage,
-            "tool": ToolMessage,
-            # Fallback for others (like 'function', 'chat', etc.)
-            "default": HumanMessage 
-        }
-
-    def _get_thread_id(self, config: RunnableConfig) -> str:
-        """Helper to safely extract the thread_id."""
-        return config["configurable"]["thread_id"]
+        self.Session = sessionmaker(bind=self.engine)
 
     def _serialize_message(self, msg: Any) -> Optional[Dict]:
         """Convert message object to JSON-serializable dict."""
-        if not isinstance(msg, BaseMessage):
+        try:
+            if isinstance(msg, BaseMessage):
+                return {
+                    "type": msg.type,
+                    "content": msg.content,
+                    "additional_kwargs": getattr(msg, "additional_kwargs", {}),
+                    "response_metadata": getattr(msg, "response_metadata", {})
+                }
+            elif isinstance(msg, dict):
+                return {
+                    "type": msg.get("type", "human"),
+                    "content": msg.get("content", ""),
+                    "additional_kwargs": msg.get("additional_kwargs", {}),
+                    "response_metadata": msg.get("response_metadata", {})
+                }
+            else:
+                return None
+        except Exception as e:
+            print(f"Error serializing message: {e}")
             return None
-        return {
-            "type": msg.type,
-            "content": msg.content,
-            "additional_kwargs": getattr(msg, "additional_kwargs", {}),
-            "response_metadata": getattr(msg, "response_metadata", {})
-        }
 
     def _deserialize_message(self, msg_data: Dict) -> Optional[BaseMessage]:
-        """Convert dict back to a BaseMessage object."""
-        msg_type = msg_data.get("type", "human")
-        content = msg_data.get("content", "")
-        
-        MessageClass = self._message_type_map.get(msg_type, self._message_type_map["default"])
-        
+        """Convert dict back to message object."""
         try:
-            if MessageClass in [HumanMessage, SystemMessage]:
-                return MessageClass(content=content)
-            elif MessageClass == AIMessage:
+            msg_type = msg_data.get("type", "human")
+            content = msg_data.get("content", "")
+            
+            if msg_type == "human":
+                return HumanMessage(content=content)
+            elif msg_type == "ai":
                 return AIMessage(
                     content=content,
                     additional_kwargs=msg_data.get("additional_kwargs", {}),
                     response_metadata=msg_data.get("response_metadata", {})
                 )
-            elif MessageClass == ToolMessage:
+            elif msg_type == "system":
+                return SystemMessage(content=content)
+            elif msg_type == "tool":
                 return ToolMessage(
                     content=content,
                     tool_call_id=msg_data.get("tool_call_id", "")
                 )
+            else:
+                return HumanMessage(content=content)
+                
         except Exception as e:
-            print(f"Error deserializing message type {msg_type}: {e}")
+            print(f"Error deserializing message: {e}")
             return None
-        return None
 
     def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
-        """Load checkpoint tuple from the database."""
-        thread_id = self._get_thread_id(config)
+        thread_id = config["configurable"]["thread_id"]
+        session = self.Session()
         
-        with self.SessionLocal() as session:
-            try:
-                # Retrieve the latest checkpoint for the thread_id
-                stmt = select(CheckpointModel).where(CheckpointModel.thread_id == thread_id)
-                model_instance = session.execute(stmt).scalars().first()
+        try:
+            latest_checkpoint = session.query(LanggraphCheckpoint) \
+                .filter(LanggraphCheckpoint.thread_id == thread_id) \
+                .order_by(LanggraphCheckpoint.timestamp.desc()) \
+                .first()
 
-                if not model_instance:
-                    return None
-                
-                # Deserialize the stored data
-                data = json.loads(model_instance.checkpoint_data)
-                metadata = json.loads(model_instance.metadata_json)
-                
-                # Reconstruct the Checkpoint structure
-                checkpoint: Checkpoint = {
-                    "v": data.get("v", 1), # Use stored version or default
-                    "id": model_instance.checkpoint_id,
-                    "ts": model_instance.timestamp.isoformat() if model_instance.timestamp else "",
-                    # The 'messages' list is deserialized here
-                    "channel_values": {
-                        "messages": [
-                            self._deserialize_message(msg_data)
-                            for msg_data in data.get("channel_values", {}).get("messages", [])
-                            if self._deserialize_message(msg_data) is not None
-                        ]
-                    },
-                    "channel_versions": data.get("channel_versions", {}),
-                    "versions_seen": data.get("versions_seen", {})
-                }
-                
-                checkpoint_tuple = CheckpointTuple(
-                    config=config,
-                    checkpoint=checkpoint,
-                    metadata=metadata,
-                    parent_config=None
-                )
-                
-                print(f"✅ Loaded checkpoint for thread: {thread_id}")
-                return checkpoint_tuple
+            if not latest_checkpoint:
+                return None
+
+            checkpoint = json.loads(latest_checkpoint.checkpoint_data)
+            metadata = json.loads(latest_checkpoint.metadata_json)
             
-            except SQLAlchemyError as e:
-                print(f"❌ DB Error loading checkpoint: {e}")
-                return None
-            except Exception as e:
-                print(f"❌ Deserialization Error loading checkpoint: {e}")
-                return None
+            messages = []
+            for msg_record in latest_checkpoint.messages:
+                msg_data = json.loads(msg_record.message_json)
+                msg = self._deserialize_message(msg_data)
+                if msg:
+                    messages.append(msg)
+
+            checkpoint["channel_values"]["messages"] = messages
+            
+            return CheckpointTuple(
+                config=config,
+                checkpoint=checkpoint,
+                metadata=metadata,
+                parent_config=None
+            )
+
+        except Exception as e:
+            print(f"❌ Error loading checkpoint: {e}")
+            return None
+        finally:
+            session.close()
 
     def put(self, config: RunnableConfig, checkpoint: Checkpoint, metadata: dict, new_versions: dict) -> RunnableConfig:
-        """Save checkpoint to the database."""
-        thread_id = self._get_thread_id(config)
+        thread_id = config["configurable"]["thread_id"]
+        session = self.Session()
         
-        # Your original logic: Filter to keep only human and AI messages and remove duplicates
-        messages = checkpoint.get("channel_values", {}).get("messages", [])
-        
-        # Prepare the conversation messages for storage (serialized)
-        # Note: We are storing the *full* checkpoint structure, but filtering the messages
-        # before saving, just as your original JSON implementation did.
-        conversation_messages = []
-        seen_content = set()
-        
-        for msg in messages:
-            if hasattr(msg, 'type') and msg.type in ['human', 'ai', 'system']:
-                # The de-duplication logic
-                content_key = f"{msg.type}:{getattr(msg, 'content', '')[:100]}"
-                if content_key not in seen_content:
-                    seen_content.add(content_key)
-                    serialized_msg = self._serialize_message(msg)
-                    if serialized_msg:
-                        conversation_messages.append(serialized_msg)
-
-        # Create the data structure to store in the 'checkpoint_data' column
-        checkpoint_to_store = {
-            "v": checkpoint.get("v", 1),
-            "id": checkpoint.get("id"),
-            "ts": checkpoint.get("ts"),
-            "channel_values": {
-                # Store the filtered messages here
-                "messages": conversation_messages
-            },
-            "channel_versions": checkpoint.get("channel_versions", {}),
-            "versions_seen": checkpoint.get("versions_seen", {})
-        }
-
-        # Prepare for DB
-        checkpoint_json = json.dumps(checkpoint_to_store, ensure_ascii=False)
-        metadata_json = json.dumps(metadata, ensure_ascii=False)
-        
-        with self.SessionLocal() as session:
-            try:
-                # Create a new model instance or update the existing one
-                model_instance = session.get(CheckpointModel, thread_id)
-                
-                if model_instance:
-                    # Update existing record
-                    model_instance.checkpoint_data = checkpoint_json
-                    model_instance.metadata_json = metadata_json
-                    model_instance.timestamp = datetime.now(timezone.utc)
-                    model_instance.checkpoint_id = checkpoint.get("id", str(uuid.uuid4()))
-                    session.merge(model_instance)
-                else:
-                    # Insert new record
-                    new_checkpoint = CheckpointModel(
-                        thread_id=thread_id,
-                        checkpoint_data=checkpoint_json,
-                        metadata_json=metadata_json,
-                        checkpoint_id=checkpoint.get("id", str(uuid.uuid4()))
-                    )
-                    session.add(new_checkpoint)
-
-                session.commit()
-                print(f"✅ Saved checkpoint to DB for thread: {thread_id}")
+        try:
+            # 1. Extract messages
+            raw_messages = checkpoint.get("channel_values", {}).get("messages", [])
             
-            except SQLAlchemyError as e:
-                session.rollback()
-                print(f"❌ DB Error saving checkpoint: {e}")
+            # 2. FILTERING LOGIC (Restored from original json_checkpointer.py)
+            # This prevents infinite duplication and token explosion
+            conversation_messages = []
+            seen_content = set()
+            
+            for msg in raw_messages:
+                # Keep only Human and AI messages (ignoring tool calls/intermediate steps)
+                # This matches your original file's behavior.
+                msg_type = getattr(msg, 'type', None) or msg.get('type') if isinstance(msg, dict) else None
+                msg_content = getattr(msg, 'content', "") or msg.get('content') if isinstance(msg, dict) else ""
+                
+                if msg_type in ['human', 'ai']:
+                    # Create unique identifier to avoid duplicates
+                    content_key = f"{msg_type}:{msg_content[:100]}"
+                    
+                    if content_key not in seen_content:
+                        seen_content.add(content_key)
+                        conversation_messages.append(msg)
+
+            # 3. Prepare checkpoint data (excluding raw messages list)
+            checkpoint_data_to_save = checkpoint.copy()
+            if "channel_values" in checkpoint_data_to_save:
+                checkpoint_data_to_save["channel_values"] = checkpoint_data_to_save["channel_values"].copy()
+                checkpoint_data_to_save["channel_values"]["messages"] = [] 
+
+            checkpoint_id = checkpoint.get("id", str(uuid.uuid4()))
+            ts_str = checkpoint.get("ts")
+            
+            if ts_str:
+                try:
+                    ts = datetime.strptime(ts_str, '%Y-%m-%dT%H:%M:%S.%f%z')
+                except ValueError:
+                    ts = datetime.utcnow()
+            else:
+                ts = datetime.utcnow()
+            
+            # 4. Create DB Records
+            new_checkpoint = LanggraphCheckpoint(
+                id=checkpoint_id,
+                thread_id=thread_id,
+                timestamp=ts,
+                checkpoint_data=json.dumps(checkpoint_data_to_save, default=str),
+                metadata_json=json.dumps(metadata, default=str),
+                new_versions_json=json.dumps(new_versions, default=str),
+            )
+            
+            message_records = []
+            for idx, msg in enumerate(conversation_messages):
+                serialized_msg = self._serialize_message(msg)
+                if serialized_msg:
+                    message_record = LanggraphMessage(
+                        checkpoint_id=checkpoint_id,
+                        thread_id=thread_id,
+                        idx=idx,
+                        message_json=json.dumps(serialized_msg, default=str)
+                    )
+                    message_records.append(message_record)
+
+            session.add(new_checkpoint)
+            session.add_all(message_records)
+            session.commit()
+            
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Error saving checkpoint: {e}")
+        finally:
+            session.close()
             
         return config
 
     def put_writes(self, config: RunnableConfig, writes: list, task_id: str) -> None:
-        """Required by BaseCheckpointSaver, but not implemented for simple storage."""
         pass
-        
+
     def list(self, config: RunnableConfig, *, filter: Optional[Dict[str, Any]] = None, before: Optional[RunnableConfig] = None, limit: Optional[int] = None) -> Iterator[CheckpointTuple]:
-        """Required by BaseCheckpointSaver, returning empty iterator for simplicity."""
         return iter([])
+    
     

@@ -189,9 +189,6 @@ _graph = None
     
 #     return _graph
 
-# Lines 79-180 - REPLACE entire get_graph function
-_checkpointer = None
-_graph = None
 
 def get_graph():
     global _checkpointer, _graph
