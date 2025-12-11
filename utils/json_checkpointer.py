@@ -63,61 +63,6 @@ class JSONCheckpointSaver(BaseCheckpointSaver):
             print(f"❌ Error loading checkpoint: {e}")
             return None
     
-    # def put(self, config: RunnableConfig, checkpoint: Checkpoint, metadata: dict, new_versions: dict) -> RunnableConfig:
-    #     """Save checkpoint to JSON file."""
-    #     thread_id = config["configurable"]["thread_id"]
-    #     file_path = self._get_file_path(thread_id)
-        
-    #     try:
-    #         # Extract messages from checkpoint
-    #         messages = checkpoint.get("channel_values", {}).get("messages", [])
-            
-    #         # Serialize messages
-    #         serialized_messages = []
-    #         for msg in messages:
-    #             serialized_msg = self._serialize_message(msg)
-    #             if serialized_msg:
-    #                 serialized_messages.append(serialized_msg)
-            
-    #         # Create data structure
-    #         data = {
-    #             "thread_id": thread_id,
-    #             "checkpoint_id": checkpoint.get("id", str(uuid.uuid4())),
-    #             "timestamp": checkpoint.get("ts", ""),
-    #             "messages": serialized_messages,
-    #             "metadata": metadata,
-    #             "new_versions": new_versions
-    #         }
-            
-    #         # Save to file
-    #         with open(file_path, 'w', encoding='utf-8') as f:
-    #             json.dump(data, f, indent=2, ensure_ascii=False)
-            
-    #         print(f"✅ Saved checkpoint to: {file_path} ({len(serialized_messages)} messages)")
-            
-    #     except Exception as e:
-    #         print(f"❌ Error saving checkpoint: {e}")
-        
-    #     return config
-
-    # def _serialize_message(self, msg: Any) -> Optional[Dict]:
-    #     """Convert message object to JSON-serializable dict."""
-    #     try:
-    #         if isinstance(msg, BaseMessage):
-    #             return {
-    #                 "type": msg.type,
-    #                 "content": msg.content,
-    #                 "additional_kwargs": getattr(msg, "additional_kwargs", {}),
-    #                 "response_metadata": getattr(msg, "response_metadata", {})
-    #             }
-    #         elif isinstance(msg, dict):
-    #             return msg
-    #         else:
-    #             return {"type": "unknown", "content": str(msg)}
-    #     except Exception as e:
-    #         print(f"Error serializing message: {e}")
-    #         return None
-
     def put(self, config: RunnableConfig, checkpoint: Checkpoint, metadata: dict, new_versions: dict) -> RunnableConfig:
         """Save checkpoint to JSON file."""
         thread_id = config["configurable"]["thread_id"]
