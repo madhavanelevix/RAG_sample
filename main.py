@@ -7,16 +7,14 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
-from sqlalchemy import create_engine, desc, asc
-from sqlalchemy.orm import sessionmaker, Session
-from dotenv import load_dotenv
+from sqlalchemy import desc, asc
+from sqlalchemy.orm import Session
 
+from utils.schemas import ChatMessageResponse, SessionListResponse, get_db
 from utils.document_process import document_upload_vector
-from utils.aichat_edited import RAG_agent, collection_name, DB_URL
+from utils.aichat_edited import RAG_agent, collection_name
 from utils.pgsql_checkpointer import LanggraphCheckpoint, LanggraphMessage
 
-load_dotenv()
 
 app = FastAPI()
 
@@ -29,45 +27,11 @@ app.add_middleware(
 )
 
 
-if not DB_URL:
-    raise ValueError("PG_VECTOR environment variable is not set.")
-
-engine = create_engine(DB_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-class SessionListResponse(BaseModel):
-    id: str
-    session_name: Optional[str] = None
-    user_id: Optional[str] = None
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-class ChatMessageResponse(BaseModel):
-    id: str
-    message_number: int
-    type: str
-    content: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 @app.get("/sessions", response_model=List[SessionListResponse])
 def get_session_list(
-    user_id: Optional[str] = None, 
-    limit: int = 20, 
-    skip: int = 0, 
+    user_id: Optional[str] = None,
+    limit: int = 20,
+    skip: int = 0,
     db: Session = Depends(get_db)
 ):
     """
@@ -86,13 +50,15 @@ def get_session_list(
     )
     return sessions
 
+
 @app.get("/sessions/{thread_id}/chats", response_model=List[ChatMessageResponse])
 def get_chat_history(thread_id: str, db: Session = Depends(get_db)):
     """
     Fetch full chat history for a specific thread_id.
     """
     # Check if session exists
-    session = db.query(LanggraphCheckpoint).filter(LanggraphCheckpoint.id == thread_id).first()
+    session = db.query(LanggraphCheckpoint).filter(
+        LanggraphCheckpoint.id == thread_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -105,6 +71,7 @@ def get_chat_history(thread_id: str, db: Session = Depends(get_db)):
     )
     return messages
 
+
 @app.delete("/sessions/{thread_id}")
 def delete_session(thread_id: str, db: Session = Depends(get_db)):
     """
@@ -113,19 +80,21 @@ def delete_session(thread_id: str, db: Session = Depends(get_db)):
     this automatically removes all associated chat messages.
     """
     # 1. Find the session
-    session = db.query(LanggraphCheckpoint).filter(LanggraphCheckpoint.id == thread_id).first()
-    
+    session = db.query(LanggraphCheckpoint).filter(
+        LanggraphCheckpoint.id == thread_id).first()
+
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     # 2. Delete the session (SQLAlchemy handles the cascade to messages)
     try:
         db.delete(session)
         db.commit()
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
-    
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting session: {str(e)}")
+
     return {"status": "success", "message": f"Session {thread_id} deleted successfully"}
 
 
@@ -134,6 +103,7 @@ UPLOAD_DIRECTORY.mkdir(exist_ok=True)
 
 print(f"Collection Name: {collection_name}")
 
+
 @app.post("/uploadfile/")
 async def upload_file(file: UploadFile = File(...)):
     """
@@ -141,7 +111,7 @@ async def upload_file(file: UploadFile = File(...)):
     """
     file_location = UPLOAD_DIRECTORY / file.filename
     st = datetime.now()
-    
+
     try:
         with file_location.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -149,22 +119,23 @@ async def upload_file(file: UploadFile = File(...)):
         # Call the vector database logic
         x = document_upload_vector(
             doc_location=file_location,
-            doc_name = file.filename,
+            doc_name=file.filename,
             collection_name=collection_name
         )
-        
+
         if isinstance(x, str) and "fail" in x.lower():
-             return JSONResponse(content={
+            return JSONResponse(content={
                 "status": "failed",
                 "message": x,
                 "filename": file.filename,
-                "size": file.size 
+                "size": file.size
             })
 
     except Exception as e:
-        await file.close() 
+        await file.close()
         print(f"Error saving file: {e}")
-        raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Could not save file: {e}")
 
     print(f"Processing time: {datetime.now() - st}")
 
@@ -172,13 +143,14 @@ async def upload_file(file: UploadFile = File(...)):
         "status": "success",
         "message": "Upload successful",
         "filename": file.filename,
-        "size": file.size 
+        "size": file.size
     })
 
 
 @app.get("/")
 def read_root():
     return {"Hello": "FastAPI File Uploader is running! Go to */uploadfile/* for file upload."}
+
 
 @app.post("/chat/")
 async def ai_chat_endpoint(user_query: str, thread_id: str):
@@ -190,7 +162,7 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
         if isinstance(ai_respons, list):
             respons = ai_respons[0]["text"]
             print("list response", respons)
-            
+
             return JSONResponse(content={
                 "status": "success",
                 "user_query": user_query,
@@ -199,13 +171,13 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
         # except Exception as e:
         #     print("Error processing AI response:", e)
         #     ai_respons = str(ai_respons)
-        else: 
+        else:
             return JSONResponse(content={
                 "status": "success",
                 "user_query": user_query,
                 "response": ai_respons
             })
-    
+
     except Exception as e:
         print("An unexpected error occurred:", e)
         return JSONResponse(content={
