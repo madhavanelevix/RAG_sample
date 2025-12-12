@@ -30,6 +30,9 @@ class LanggraphCheckpoint(Base):
     id = Column(String(255), primary_key=True) 
     user_id = Column(String(255), nullable=True)
     
+    # Session Name (derived from first human message)
+    session_name = Column(Text, nullable=True)
+    
     # Store minimal checkpoint data to resume state
     checkpoint_blob = Column(Text, nullable=False) 
     metadata_blob = Column(Text, default="{}")
@@ -83,6 +86,7 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
     Features:
     1. Robust Deduplication: Prevents saving identical messages.
     2. Session/Message Split: Uses two tables as requested.
+    3. Auto-Session Naming: Uses first human message as session name.
     """
     
     def __init__(self, postgres_url: str):
@@ -184,7 +188,7 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
             session.close()
 
     def put(self, config: RunnableConfig, checkpoint: Checkpoint, metadata: dict, new_versions: dict) -> RunnableConfig:
-        """Save session with strict deduplication."""
+        """Save session with strict deduplication and auto-naming."""
         thread_id = config["configurable"]["thread_id"]
         user_id = str(config["configurable"].get("user_id", ""))
         session = self.Session()
@@ -193,6 +197,18 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
             # --- 1. PREPARE SESSION DATA ---
             current_messages = checkpoint.get("channel_values", {}).get("messages", [])
             
+            # Determine Session Name from first human message
+            session_name = None
+            for msg in current_messages:
+                # Handle both object and dict formats safely
+                m_type = getattr(msg, 'type', None) or (msg.get('type') if isinstance(msg, dict) else None)
+                m_content = getattr(msg, 'content', "") or (msg.get('content') if isinstance(msg, dict) else "")
+                
+                if m_type == 'human' and m_content:
+                    # Use first 50 chars of the first human message
+                    session_name = m_content[:50] + "..." if len(m_content) > 50 else m_content
+                    break
+
             # Save everything EXCEPT messages to the session blob
             checkpoint_data = checkpoint.copy()
             if "channel_values" in checkpoint_data:
@@ -205,6 +221,7 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
                 db_session = LanggraphCheckpoint(
                     id=thread_id,
                     user_id=user_id,
+                    session_name=session_name,
                     checkpoint_blob=json.dumps(checkpoint_data, default=str),
                     metadata_blob=json.dumps(metadata, default=str)
                 )
@@ -214,6 +231,9 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
                 db_session.checkpoint_blob = json.dumps(checkpoint_data, default=str)
                 db_session.metadata_blob = json.dumps(metadata, default=str)
                 db_session.user_id = user_id
+                # Only set name if it's currently missing and we found one
+                if not db_session.session_name and session_name:
+                    db_session.session_name = session_name
 
             # --- 2. ROBUST MESSAGE DEDUPLICATION ---
             
@@ -222,7 +242,6 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
                 .filter_by(thread_id=thread_id).all()
             
             # Create a set of (type, content) tuples for O(1) lookups
-            # content is hashed for memory efficiency if large, but here direct comparison is safer
             existing_signatures = set((m.type, m.content) for m in existing_msgs)
             
             # Step B: Filter incoming messages
@@ -250,7 +269,7 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
                 if signature in existing_signatures:
                     continue
                 
-                # Filter 4: Already seen in this current batch? (e.g. [A, B, A, B])
+                # Filter 4: Already seen in this current batch?
                 if signature in seen_in_batch:
                     continue
 
@@ -274,8 +293,6 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
                         additional_kwargs=json.dumps(msg_data['additional_kwargs'])
                     )
                     session.add(new_msg)
-                
-                # print(f"✅ Saved {len(messages_to_save)} new unique messages.")
 
             session.commit()
             
@@ -292,5 +309,4 @@ class PostgresCheckpointSaver(BaseCheckpointSaver):
 
     def list(self, config: RunnableConfig, *, filter: Optional[Dict[str, Any]] = None, before: Optional[RunnableConfig] = None, limit: Optional[int] = None) -> Iterator[CheckpointTuple]:
         return iter([])
-    
-    
+

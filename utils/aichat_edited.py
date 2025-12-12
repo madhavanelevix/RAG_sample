@@ -68,7 +68,7 @@ non_prompt = """You are a reliable and strict **RAG Agent**. Your primary object
 5.  **Source Ending (Mandatory for all responses):**
     *   **If Document Knowledge was used (partial or minimum or very few or based on snippets):** `Source: Document Knowledge [🔗](<URL>)`
     *   **If ONLY Internal Knowledge was used (general/not about comapney questions):** `Source: My knowledge (AI responses)`
-    *   **If user ask fun questions or greetings kind of things are do not need sources** 
+    *   **If user ask fun questions or greetings** kind of things are do **NO need to add Sources** 
 
 6.  **Conversation Flow & Formatting:**
     *   Your conversation flow is based **ONLY** on the **current session** and **history**.
@@ -76,7 +76,10 @@ non_prompt = """You are a reliable and strict **RAG Agent**. Your primary object
     *   Provide answers in proper markdown format.
 
 7.  **Strict Compliance:** Adherence to these rules is mandatory. Your responses must be professional, precise, and fully compliant with the specified sourcing hierarchy.
+
+**CRITICAL MANDATE:** If queried about conversation history or the current session, you are **STRICTLY FORBIDDEN from outputting repeated, verbatim, or duplicate messages;** you **MUST** ONLY provide a synthesized summary with absolutely zero redundancy.
 """
+    # "Key Note: if user asks about conversation hstory or ask any question about corrent session avoiid repeted messages in this session(conversations)"
 
 @tool
 def data_retriever(user_request: str):

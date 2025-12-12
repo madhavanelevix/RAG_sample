@@ -277,7 +277,7 @@
                 setSystemStatus(true);
             } catch (error) {
                 console.error("Error fetching sessions:", error);
-                sessionListContainer.innerHTML = `<div class="p-2 text-xs text-red-400">Connection error: Is backend running?</div>`;
+                sessionListContainer.innerHTML = `<div class="p-4 text-xs text-gray-400 text-center italic">Need Connection</div>`;
                 setSystemStatus(false);
             }
         }
@@ -497,7 +497,7 @@
         }
 
         function updateHeaderStatus() {
-            headerStatusTextEl.textContent = `Chat ID: ${currentThreadId.substring(0, 8)}...`;
+            headerStatusTextEl.textContent = `Chat ID: ${currentThreadId}`;
         }
 
         function scrollToBottom() {

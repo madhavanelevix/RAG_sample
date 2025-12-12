@@ -1,25 +1,133 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware # Import CORS Middleware
+from fastapi.middleware.cors import CORSMiddleware
 import shutil
+import os
 from pathlib import Path
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+from sqlalchemy import create_engine, desc, asc
+from sqlalchemy.orm import sessionmaker, Session
+from dotenv import load_dotenv
 
 from utils.document_process import document_upload_vector
-from utils.aichat_edited import RAG_agent, collection_name
+from utils.aichat_edited import RAG_agent, collection_name, DB_URL
+from utils.pgsql_checkpointer import LanggraphCheckpoint, LanggraphMessage
 
+load_dotenv()
 
 app = FastAPI()
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace "*" with your specific frontend URL
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all HTTP methods (POST, GET, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# --------------------------------
+
+
+if not DB_URL:
+    raise ValueError("PG_VECTOR environment variable is not set.")
+
+engine = create_engine(DB_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+class SessionListResponse(BaseModel):
+    id: str
+    session_name: Optional[str] = None
+    user_id: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    message_number: int
+    type: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.get("/sessions", response_model=List[SessionListResponse])
+def get_session_list(
+    user_id: Optional[str] = None, 
+    limit: int = 20, 
+    skip: int = 0, 
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch all chat sessions. Sorted by newest update first.
+    """
+    query = db.query(LanggraphCheckpoint)
+
+    if user_id:
+        query = query.filter(LanggraphCheckpoint.user_id == user_id)
+
+    sessions = (
+        query.order_by(desc(LanggraphCheckpoint.updated_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return sessions
+
+@app.get("/sessions/{thread_id}/chats", response_model=List[ChatMessageResponse])
+def get_chat_history(thread_id: str, db: Session = Depends(get_db)):
+    """
+    Fetch full chat history for a specific thread_id.
+    """
+    # Check if session exists
+    session = db.query(LanggraphCheckpoint).filter(LanggraphCheckpoint.id == thread_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Fetch messages strictly ordered
+    messages = (
+        db.query(LanggraphMessage)
+        .filter(LanggraphMessage.thread_id == thread_id)
+        .order_by(asc(LanggraphMessage.message_number))
+        .all()
+    )
+    return messages
+
+@app.delete("/sessions/{thread_id}")
+def delete_session(thread_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a specific session. 
+    Due to 'cascade="all, delete-orphan"' in the model, 
+    this automatically removes all associated chat messages.
+    """
+    # 1. Find the session
+    session = db.query(LanggraphCheckpoint).filter(LanggraphCheckpoint.id == thread_id).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 2. Delete the session (SQLAlchemy handles the cascade to messages)
+    try:
+        db.delete(session)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+    
+    return {"status": "success", "message": f"Session {thread_id} deleted successfully"}
+
 
 UPLOAD_DIRECTORY = Path("uploaded_files")
 UPLOAD_DIRECTORY.mkdir(exist_ok=True)
@@ -45,7 +153,6 @@ async def upload_file(file: UploadFile = File(...)):
             collection_name=collection_name
         )
         
-        # Check for failure string from document_process
         if isinstance(x, str) and "fail" in x.lower():
              return JSONResponse(content={
                 "status": "failed",
@@ -58,9 +165,6 @@ async def upload_file(file: UploadFile = File(...)):
         await file.close() 
         print(f"Error saving file: {e}")
         raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
-
-    finally:
-        pass
 
     print(f"Processing time: {datetime.now() - st}")
 
@@ -78,7 +182,7 @@ def read_root():
 
 @app.post("/chat/")
 async def ai_chat_endpoint(user_query: str, thread_id: str):
-    # try:
+    try:
         # Call the RAG Agent
         ai_respons = RAG_agent(user_message=user_query, thread_id=thread_id)
         print(type(ai_respons))
@@ -102,13 +206,13 @@ async def ai_chat_endpoint(user_query: str, thread_id: str):
                 "response": ai_respons
             })
     
-    # except Exception as e:
-    #     print("An unexpected error occurred:", e)
-    #     return JSONResponse(content={
-    #         "status": "Error",
-    #         "user_query": user_query,
-    #         "response": "error on processing"
-    #     }, status_code=500)
+    except Exception as e:
+        print("An unexpected error occurred:", e)
+        return JSONResponse(content={
+            "status": "Error",
+            "user_query": user_query,
+            "response": "error on processing"
+        }, status_code=500)
 
 
 # uvicorn main:app --reload
