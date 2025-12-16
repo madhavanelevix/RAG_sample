@@ -420,8 +420,6 @@
             localStorage.setItem(STORAGE_KEY_THREAD, currentThreadId);
             const bubbles = chatHistoryEl.querySelectorAll('.chat-bubble-container');
             bubbles.forEach(b => b.remove());
-// --- FIX: Force hide the loader ---
-            loadingIndicatorEl.classList.add('hidden');
             toggleEmptyState(true);
             updateHeaderStatus();
             fetchSessionList(); 
@@ -576,7 +574,7 @@
         }
 
         function updateHeaderStatus() {
-            headerStatusTextEl.textContent = `Chat ID: ${currentThreadId}`;
+            headerStatusTextEl.textContent = `Chat ID: ${currentThreadId.substring(0, 8)}...`;
         }
 
         function scrollToBottom() {
@@ -664,17 +662,6 @@
                 uploadButtonEl.disabled = false;
             }
         }
-        // Add this to your Event Listeners section
-        document.querySelectorAll('input[name="source"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                // Optional: specific logic if you only want it to happen when switching TO specific sources
-                // For now, this triggers on any change between the radio buttons
-                createNewSessionUI();
-                
-                // Optional visual feedback
-                // alert(`Switched to ${e.target.value}. Starting new session.`);
-            });
-        });
     </script>
 </body>
 </html>

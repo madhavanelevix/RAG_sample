@@ -153,10 +153,29 @@ def read_root():
 
 
 @app.post("/chat/")
-async def ai_chat_endpoint(user_query: str, thread_id: str):
+async def ai_chat_endpoint(user_query: str, thread_id: str, sources: str, model: str):
+    print(f"user_query: '{type(user_query)}', '{user_query}'")
+    print(f"thread_id: '{type(thread_id)}, '{thread_id}'")
+    print(f"source: '{type(sources)}, '{sources}'")
+    print(f"model: '{type(model)}, '{model}'")
+    
+    def trys(sources, model):
+        sources = (sources == 'Document Source')
+        model = 0 if model == 'Gemini' else 1 if model == 'Groq' else 2
+        return sources, model
+
     try:
+        sources, model = trys(sources, model)
+
+        print("Outs:", sources, model)
+
         # Call the RAG Agent
-        ai_respons = RAG_agent(user_message=user_query, thread_id=thread_id)
+        ai_respons = RAG_agent(
+            user_message=user_query, 
+            thread_id=thread_id,
+            model = model,
+            source = sources
+        )
         print(type(ai_respons))
         # try:
         if isinstance(ai_respons, list):
