@@ -161,7 +161,7 @@ async def ai_chat_endpoint(user_query: str, thread_id: str, sources: str, model:
     
     def trys(sources, model):
         sources = (sources == 'Document Source')
-        model = 0 if model == 'Gemini' else 1 if model == 'Groq' else 2
+        model = 0 if model == 'Gemini' else 1 if model == 'Groq' else 2 if model == 'openai' else 3
         return sources, model
 
     try:

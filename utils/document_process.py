@@ -1,7 +1,22 @@
+import os
+from docx import Document
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from utils.vector import vector_upload, excel_upload
 from utils.seaweed import upload_file
+
+def docx_to_txt(docx_path):
+    base_path, _ = os.path.splitext(docx_path)
+    txt_path = base_path + ".txt"
+    doc = Document(docx_path)
+
+    with open(txt_path, "w", encoding="utf-8") as f:
+        for para in doc.paragraphs:
+            f.write(para.text + "\n")
+
+    print ("📃Word file Processing")
+    return txt_path
 
 def percentage(current, total):
     if total == 0:
@@ -14,7 +29,7 @@ def content_spliter(doc):
         state_of_the_union = f.read()
     
     # print("book \n"*3, state_of_the_union)
-    print("book\n"*3)
+    print("book\n")
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -37,18 +52,18 @@ def document_upload_vector(doc_location: str, doc_name: str, collection_name: st
         x = excel_upload(
             excel_path=doc_location,
             collection_name=collection_name,
-            metadata_columns=[file_url],
+            document_link=file_url,
         )
         return 1
 
-    elif file_type == "Text" or file_type == "Markdown":
+    elif file_type == "Text" or file_type == "Markdown" or file_type == "Word":
+        if file_type == "Word":
+            doc_location = docx_to_txt(doc_location)
         texts = content_spliter(doc_location)
         docs_len = len(texts)
         print(docs_len)
         for i in range(docs_len):
             metadata = {
-                # "doccumet": doc_name,
-                # "page_number": i+1,
                 "document_link": file_url, 
             }
 
@@ -63,7 +78,7 @@ def document_upload_vector(doc_location: str, doc_name: str, collection_name: st
         return 1
     
     else: 
-
+        # print("file not supported")
         return "file not supported"
         
 

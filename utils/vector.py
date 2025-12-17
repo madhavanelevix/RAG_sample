@@ -102,122 +102,151 @@ def retrive(
     retruve data 
     """
     vector_store = vectordb(collection=collection_name)
-    data = vector_store.similarity_search(
+    # return vector_store.similarity_search(
+    #     query=user_query,
+    #     k=k
+    # )
+    return vector_store.similarity_search_with_score(
         query=user_query,
         k=k
     )
 
-    return data
 
 def excel_upload(
     excel_path: str,
     collection_name: str,
-    metadata_columns: list,
-    text_columns: list = None,
-    image_column: str = None,
-    sheet_name: str = None  # You can specify sheet name or index
+    document_link: str,
+    chunk_size: int = 1000,
+    chunk_overlap: int = 70
 ):
     """
-    Fixed version: Properly handles file paths and ensures df is always a DataFrame
+    Excel → PGVector upload (DROP-IN REPLACEMENT)
+
+    Uses:
+    - vectordb()
+    - data_embedding()
+    - PGVector.add_embeddings()
+
+    Metadata format:
+    {"document_link": "<document_link>"}
     """
-    # --- Fix Windows path issues ---
-    excel_path = os.path.expanduser(excel_path)  # Handles ~ if any
-    excel_path = os.path.abspath(excel_path)     # Converts to absolute path
- 
-    print(f"Attempting to load Excel file from: {excel_path}")
-    if not os.path.exists(excel_path):
-        raise FileNotFoundError(f"Excel file not found at: {excel_path}")
- 
-    # --- Load Excel safely as DataFrame ---
-    try:
-        # Always force loading a single sheet to get a DataFrame, not dict
-        df = pd.read_excel(excel_path, sheet_name=sheet_name, engine='openpyxl')
-        # If user didn't specify sheet_name and file has multiple sheets,
-        # pd.read_excel returns dict only when sheet_name=None → we avoid that
-        if isinstance(df, dict):
-            # Take the first sheet if multiple
-            sheet_names = list(df.keys())
-            print(f"Multiple sheets found: {sheet_names}. Using the first one: '{sheet_names[0]}'")
-            df = df[sheet_names[0]]
- 
-        print(f"Successfully loaded Excel: {len(df)} rows × {len(df.columns)} columns")
-        print(f"Columns: {list(df.columns)}")
- 
-    except Exception as e:
-        raise ValueError(f"Failed to read Excel file: {e}")
- 
-    # --- Determine columns for text, metadata, image ---
-    all_columns = df.columns.tolist()
- 
-    if metadata_columns is None:
-        metadata_columns = []
- 
-    if text_columns is None:
-        excluded = metadata_columns + ([image_column] if image_column else [])
-        text_columns = [col for col in all_columns if col not in excluded]
- 
-    # --- Reuse your existing vectordb and data_embedding logic ---
-    vector_store = vectordb(collection=collection_name)
-    results = []
- 
-    for idx, row in df.iterrows():
-        row_dict = row.to_dict()
- 
-        # Build text content
-        text_parts = []
-        for col in text_columns:
-            val = row_dict.get(col)
-            if pd.notna(val):
-                text_parts.append(str(val).strip())
-        text_content = " | ".join(text_parts) if text_parts else ""
- 
-        # Metadata
-        metadata = metadata_columns
-        # metadata = {col: row_dict.get(col) for col in metadata_columns}
-        if metadata_columns is None:
-            metadata.update({
-                "row_index": idx,
-                "source": excel_path,
-                "content_id": uuid4().hex
-            })
-    
-        # Decide what to embed
-        data_to_embed = None
-        embed_type = "text"
- 
-        if image_column and pd.notna(row_dict.get(image_column)):
-            img_path = str(row_dict[image_column]).strip()
-            data_to_embed = img_path
-            embed_type = "image"
-        elif text_content:
-            data_to_embed = text_content
-        else:
-            print(f"Row {idx}: Skipping — no text or image found")
-            results.append({"status": "skipped", "row": idx})
-            continue
- 
-        print(f"Row {idx}: Embedding {embed_type} → {data_to_embed[:80]}{'...' if len(data_to_embed)>80 else ''}")
- 
-        # Generate embedding using your existing function
-        embedding = data_embedding(data_to_embed)
- 
-        if embedding is None:
-            results.append({"status": "failed", "row": idx, "reason": "embedding_failed"})
-            continue
- 
-        # Upload
-        try:
-            vector_store.add_embeddings(
-                texts=[data_to_embed],
-                embeddings=[embedding],
-                metadatas=[metadata]
+
+    import os
+    import pandas as pd
+
+    # -------------------------
+    # Helpers (LOCAL)
+    # -------------------------
+    def detect_title_and_header(df):
+        title = None
+        header_row = None
+
+        for i in range(min(5, len(df))):
+            row = df.iloc[i].dropna().astype(str)
+
+            if len(row) <= 2 and row.str.len().mean() > 20:
+                title = " ".join(row.tolist())
+                continue
+
+            if len(row) >= 3 and row.str.len().mean() < 25:
+                header_row = i
+                break
+
+        return title, header_row
+
+    def sheet_to_text(df, title, header_row):
+        blocks = []
+
+        if title:
+            blocks.append(f"TITLE: {title}")
+
+        if header_row is not None:
+            df.columns = df.iloc[header_row]
+            df = df.iloc[header_row + 1:]
+
+        for _, row in df.iterrows():
+            row_text = " | ".join(
+                [str(v) for v in row if pd.notna(v)]
             )
-            results.append({"status": "success", "row": idx, "metadata": metadata})
-        except Exception as e:
-            print(f"Row {idx}: Upload failed → {e}")
-            results.append({"status": "failed", "row": idx, "error": str(e)})
- 
-    success_count = len([r for r in results if r["status"] == "success"])
-    print(f"\nExcel upload completed! {success_count}/{len(df)} rows successfully uploaded.")
+            if row_text.strip():
+                blocks.append(row_text)
+
+        return "\n".join(blocks)
+
+    def chunk_text(text):
+        chunks = []
+        start = 0
+        length = len(text)
+
+        while start < length:
+            end = start + chunk_size
+            chunks.append(text[start:end])
+            start = end - chunk_overlap
+
+        return chunks
+
+    # -------------------------
+    # Validation
+    # -------------------------
+    excel_path = os.path.abspath(os.path.expanduser(excel_path))
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Excel file not found: {excel_path}")
+
+    vector_store = vectordb(collection=collection_name)
+    xls = pd.ExcelFile(excel_path, engine="openpyxl")
+
+    results = []
+
+    print(f"📄 Excel sheets detected: {xls.sheet_names}")
+
+    # -------------------------
+    # Processing
+    # -------------------------
+    for page_index, sheet_name in enumerate(xls.sheet_names):
+        df = xls.parse(sheet_name, header=None)
+
+        title, header_row = detect_title_and_header(df)
+        full_text = sheet_to_text(df, title, header_row)
+
+        if not full_text.strip():
+            continue
+
+        chunks = chunk_text(full_text)
+
+        for chunk_index, chunk in enumerate(chunks):
+            embedding = data_embedding(chunk)
+            if embedding is None:
+                continue
+
+            metadata = {
+                "document_link": document_link,
+                "sheet_name": sheet_name,
+                "page": page_index,
+                "chunk": chunk_index,
+                "title": title
+            }
+
+            try:
+                vector_store.add_embeddings(
+                    texts=[chunk],
+                    embeddings=[embedding],
+                    metadatas=[metadata]
+                )
+
+                results.append({
+                    "status": "success",
+                    "sheet": sheet_name,
+                    "chunk": chunk_index
+                })
+
+            except Exception as e:
+                print(f"❌ Upload failed (sheet={sheet_name}, chunk={chunk_index}): {e}")
+                results.append({
+                    "status": "failed",
+                    "sheet": sheet_name,
+                    "chunk": chunk_index,
+                    "error": str(e)
+                })
+
+    print(f"✅ Excel upload completed → {len(results)} chunks stored")
     return results
- 
