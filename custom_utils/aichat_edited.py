@@ -1,4 +1,6 @@
-import os, uuid, json
+import os
+import uuid
+import json
 from pathlib import Path
 # from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import InMemorySaver, MemorySaver
@@ -18,14 +20,13 @@ from langchain.tools import tool
 
 from psycopg_pool import ConnectionPool
 
-from utils.json_checkpointer import JSONCheckpointSaver
-from utils.pgsql_checkpointer import PostgresCheckpointSaver
-from utils.vector import retrive
+from custom_utils.pgsql_checkpointer import PostgresCheckpointSaver
+from custom_utils.vector import retrive
 
 from dotenv import load_dotenv
 load_dotenv()
 
-collection_name = os.getenv("VECTOR_COLLECTION")
+collection_name = ""
 
 doc_prompt = """You are a **STRICT RAG Agent**.
 Your responses must be based on **retrieved documents only**.
@@ -143,8 +144,9 @@ web_prompt = """You are a **Friendly, Witty, and Knowledgeable AI Companion**. Y
 **CRITICAL MANDATE:** If queried about conversation history or the current session, **summarize the information exclusively**; **ensure zero redundancy** and provide only synthesized insights.
 """
 
+
 @tool
-def data_retriever(user_request: str):  
+def data_retriever(user_request: str):
     """
     Retrieves existing content from vector DB based on user request.
 
@@ -159,7 +161,7 @@ def data_retriever(user_request: str):
     print("user_request:\n", user_request)
     print()
     try:
-        existing_content = retrive(user_request, collection_name=collection_name)
+        existing_content = retrive(user_request)
         try:
             print(existing_content[0])
             print(existing_content[0][1])
@@ -168,22 +170,16 @@ def data_retriever(user_request: str):
         except:
             score = None
         return existing_content, score
-    
+
     except:
         return "❌ Error retrieving content"
 
-# DB_URI = os.getenv("DATABASE_URL")
 DB_URL = os.getenv("PG_VECTOR")
-
-# _connection_pool = None
-# _store = None
-_checkpointer = None
-_graph = None
-
+_checkpointer = PostgresCheckpointSaver(postgres_url=DB_URL)
 
 openai_model = AzureChatOpenAI(
-    azure_endpoint="https://agenticai-openai-web.openai.azure.com/",
-    api_key=os.getenv("OPENAI_API_KEY"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version="2024-02-15-preview",
     deployment_name="gpt-4o",
     temperature=0,
@@ -193,7 +189,8 @@ openai_model = AzureChatOpenAI(
 def get_graph(source: bool, model: int):
 
     print("use Document Source" if source else "use Web Source")
-    tool, prompt = ([data_retriever], doc_prompt) if source else ([], web_prompt)
+    tool, prompt = ([data_retriever], doc_prompt) if source else (
+        [], web_prompt)
 
     llm = {
         0: "google_genai:gemini-2.5-flash",
@@ -202,55 +199,51 @@ def get_graph(source: bool, model: int):
         3: "ollama:glm-4.6:cloud"
     }.get(model, "ollama:glm-4.6:cloud")
 
-    # llm = os.getenv("MODEL")
     print(llm, DB_URL[-20:])
-    print(prompt[:50])
-    # rag_agent = create_agent(
-    #     name="RAG_agent",
-    #     model=llm,
-    #     tools=tool,
-    #     system_prompt=prompt,
-    # )
 
-    global _checkpointer, _graph
-    if _graph is not None:
-        return _graph
-        
-    _checkpointer = PostgresCheckpointSaver(postgres_url=DB_URL)
-    # _checkpointer = JSONCheckpointSaver(sessions_folder="sessions")
-    
+    agent = create_agent(
+        name="agent",
+        model=llm,
+        tools=tool,
+        system_prompt=prompt,
+    )
+
     # Build graph with direct RAG agent call
     def call_rag_agent(state: MessagesState):
         """Call RAG agent directly without nesting."""
         messages = state.get("messages", [])
-        
+
         if not messages:
             return {"messages": []}
-        
-        # Call the RAG agent directly
-        # response = rag_agent.invoke({"messages": messages})
-        response = create_agent(
-            name="RAG_agent",
-            model=llm,
-            tools=tool,
-            system_prompt=prompt,
-        ).invoke({"messages": messages})
+
+        # if source:
+        #     print("use Document Source")
+        #     # Call the RAG agent directly
+        #     response = rag_agent.invoke({"messages": messages})
+        # else:
+        #     print("use Web Source")
+        #     # Call the Web agent directly
+        #     response = web_agent.invoke({"messages": messages})
+
+        response = agent.invoke({"messages": messages})
+
         return {"messages": response["messages"]}
-    
+
     # Build graph
     builder = StateGraph(MessagesState)
     builder.add_node("call_rag_agent", call_rag_agent)
     builder.add_edge(START, "call_rag_agent")
-    
+
     _graph = builder.compile(checkpointer=_checkpointer)
-    
+
     return _graph
 
 
 def RAG_agent(user_message: str, thread_id: str, source: bool, model: int, user_id="1"):
     print("ai agent\n" * 3)
-    print("Using persistent Postgres-backed graph")
-    graph = get_graph(source, model)  # ← This returns the same live graph every time
+    # print("Using persistent Postgres-backed graph")
+    # ← This returns the same live graph every time
+    graph = get_graph(source, model)
 
     config = {
         "configurable": {
@@ -258,7 +251,7 @@ def RAG_agent(user_message: str, thread_id: str, source: bool, model: int, user_
             "user_id": user_id,
         }
     }
-    print("config:", config)
+    print("config:\n", config)
     result_text = ""
     for chunk in graph.stream(
         {"messages": [HumanMessage(content=user_message)]},
@@ -266,8 +259,7 @@ def RAG_agent(user_message: str, thread_id: str, source: bool, model: int, user_
         stream_mode="values"
     ):
         msg = chunk["messages"][-1]
-        print("msge out\n", msg)
+        print("msge out\n"*3, f"{msg.content[:100]}...")
         result_text = msg.content
-        
-    return result_text
 
+    return result_text
